@@ -20,6 +20,69 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Local Postgres
+
+Start a local PostgreSQL instance with Docker:
+
+```bash
+docker compose up -d
+```
+
+Default connection values:
+
+- Host: `localhost`
+- Port: `5432`
+- Database: `ourmediaarchive`
+- User: `oma_app`
+- Password: `oma_dev_password`
+
+The initial schema is loaded from [`db/schema.sql`](./db/schema.sql) on first container initialization.
+
+Stop database:
+
+```bash
+docker compose down
+```
+
+Reset database (destroys local data volume and re-runs schema init):
+
+```bash
+docker compose down -v
+docker compose up -d
+```
+
+## Supabase Setup (Cloud)
+
+This project is configured to use Supabase for cloud database access via Next.js route handlers.
+
+1. Copy env template and fill values:
+
+```bash
+cp .env.example .env.local
+```
+
+Required variables:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server only; never expose in client code)
+
+2. In Supabase SQL Editor, run schema:
+
+- [`db/schema.sql`](./db/schema.sql)
+
+3. Start app:
+
+```bash
+npm run dev
+```
+
+### API routes added
+
+- `POST /api/invite-requests`
+- `GET /api/profile` (requires `Authorization: Bearer <access_token>`)
+- `PATCH /api/profile` (requires `Authorization: Bearer <access_token>`)
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

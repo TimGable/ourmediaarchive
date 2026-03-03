@@ -1,0 +1,294 @@
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence, LayoutGroup } from "motion/react";
+import { SignIn } from "./sign-in";
+import { RequestInvite } from "./request-invite";
+import { BrowseArtists } from "./browse-artists";
+import { BrowseVisualArtists } from "./browse-visual-artists";
+import { BrowseVideoArtists } from "./browse-video-artists";
+import { CategorySelector } from "./category-selector";
+import { InteractiveBackground } from "./interactive-background";
+
+export function LandingPage({ onSignIn }) {
+  const [showCategories, setShowCategories] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showSignIn, setShowSignIn] = useState(false);
+  const [showRequestInvite, setShowRequestInvite] = useState(false);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [hoveredButton, setHoveredButton] = useState(null);
+  const [showAbout, setShowAbout] = useState(false);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      // Calculate mouse position relative to viewport center
+      const x = (e.clientX - window.innerWidth / 2) / window.innerWidth;
+      const y = (e.clientY - window.innerHeight / 2) / window.innerHeight;
+      setMousePosition({ x, y });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  // Artists data - empty until people sign up
+  const artists = [];
+
+  if (showSignIn) {
+    return (
+      <SignIn 
+        onBack={() => setShowSignIn(false)} 
+        onSignIn={onSignIn}
+        onRequestInvite={() => {
+          setShowSignIn(false);
+          setShowRequestInvite(true);
+        }}
+      />
+    );
+  }
+
+  if (showRequestInvite) {
+    return <RequestInvite onBack={() => setShowRequestInvite(false)} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-black text-white overflow-hidden">
+      {/* Hero Section */}
+      <div className={`relative ${!showCategories && !selectedCategory ? 'min-h-screen flex items-center justify-center' : 'min-h-screen'}`}>
+        {/* Interactive Background */}
+        <InteractiveBackground />
+        
+        {/* Content */}
+        <div className="relative z-10 max-w-7xl mx-auto px-6 py-12">
+          <AnimatePresence mode="wait">
+            {selectedCategory === 'music' ? (
+              <motion.div
+                key="music-browse"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <BrowseArtists
+                  onArtistClick={(artist) => console.log('Artist clicked:', artist)}
+                  onBack={() => {
+                    setSelectedCategory(null);
+                    setShowCategories(true);
+                  }}
+                />
+              </motion.div>
+            ) : selectedCategory === 'visual' ? (
+              <motion.div
+                key="visual-browse"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <BrowseVisualArtists
+                  onArtistClick={(artist) => console.log('Artist clicked:', artist)}
+                  onBack={() => {
+                    setSelectedCategory(null);
+                    setShowCategories(true);
+                  }}
+                />
+              </motion.div>
+            ) : selectedCategory === 'video' ? (
+              <motion.div
+                key="video-browse"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <BrowseVideoArtists
+                  onArtistClick={(artist) => console.log('Artist clicked:', artist)}
+                  onBack={() => {
+                    setSelectedCategory(null);
+                    setShowCategories(true);
+                  }}
+                />
+              </motion.div>
+            ) : showCategories ? (
+              <motion.div
+                key="categories"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <CategorySelector
+                  onCategorySelect={(category) => {
+                    setSelectedCategory(category);
+                    setShowCategories(false);
+                  }}
+                  onBack={() => setShowCategories(false)}
+                  showBackButton={true}
+                />
+              </motion.div>
+            ) : (
+              <div className="text-center flex items-center justify-center min-h-[60vh]">
+                <motion.div
+                  key="landing"
+                  initial={{ opacity: 0, x: -100 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 100 }}
+                  transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                >
+                  {/* Logo/Brand */}
+                  <motion.div 
+                    className="mb-16"
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2, duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+                  >
+                    <h1 className="text-4xl md:text-5xl lg:text-6xl tracking-tight mb-4">our media archive</h1>
+                  </motion.div>
+
+                  {/* CTA Buttons */}
+                  <motion.div 
+                    className="flex flex-col items-center gap-4 md:gap-6 mb-16 max-w-md mx-auto w-full px-4"
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.6, duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+                  >
+                    {/* Browse Artists - Big Button */}
+                    <motion.button
+                      onClick={() => setShowCategories(true)}
+                      className="w-full group relative px-8 md:px-12 py-6 md:py-8 border-2 border-white overflow-hidden bg-transparent transition-all duration-300 active:scale-95 touch-manipulation"
+                      onHoverStart={() => setHoveredButton('browse')}
+                      onHoverEnd={() => setHoveredButton(null)}
+                    >
+                      <motion.div 
+                        className="absolute inset-0 bg-white"
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: hoveredButton === 'browse' ? 1 : 0 }}
+                        transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+                        style={{ originX: 0 }}
+                      />
+                      <motion.span 
+                        className="relative z-10 text-xl md:text-2xl tracking-wide"
+                        animate={{ 
+                          color: hoveredButton === 'browse' ? '#000000' : '#ffffff',
+                          letterSpacing: hoveredButton === 'browse' ? '0.1em' : '0.025em'
+                        }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        Browse Artists
+                      </motion.span>
+                    </motion.button>
+                  
+                    {/* Sign In and Request Invite - Smaller Buttons Side by Side */}
+                    <motion.div 
+                      className="w-full flex gap-3 md:gap-4"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.8 }}
+                    >
+                      <motion.button 
+                        className="flex-1 group relative px-4 md:px-6 py-4 border border-white/40 overflow-hidden bg-white/5 hover:border-white/60 hover:bg-white/15 transition-all duration-200 active:scale-95 touch-manipulation"
+                        onClick={() => setShowSignIn(true)}
+                      >
+                        <span className="relative z-10 text-sm md:text-base tracking-wide text-white">
+                          Sign In
+                        </span>
+                        <motion.div
+                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"
+                          initial={{ scaleX: 0 }}
+                          whileHover={{ scaleX: 1 }}
+                          transition={{ duration: 0.3 }}
+                        />
+                      </motion.button>
+                    
+                      <motion.button 
+                        className="flex-1 group relative px-4 md:px-6 py-4 border border-white/40 overflow-hidden bg-white/5 hover:border-white/60 hover:bg-white/15 transition-all duration-200 active:scale-95 touch-manipulation"
+                        onClick={() => setShowRequestInvite(true)}
+                      >
+                        <span className="relative z-10 text-sm md:text-base tracking-wide text-white">
+                          Request Invite
+                        </span>
+                        <motion.div
+                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"
+                          initial={{ scaleX: 0 }}
+                          whileHover={{ scaleX: 1 }}
+                          transition={{ duration: 0.3 }}
+                        />
+                      </motion.button>
+                    </motion.div>
+
+                    {/* About Button */}
+                    <motion.button
+                      onClick={() => setShowAbout(!showAbout)}
+                      className="relative group px-6 py-2 border border-white/20 hover:border-white/40 transition-all duration-300 overflow-hidden touch-manipulation"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 1, duration: 0.6 }}
+                    >
+                      <span className="relative z-10 text-xs md:text-sm tracking-widest text-gray-400 group-hover:text-white transition-colors">
+                        {showAbout ? 'close' : 'about'}
+                      </span>
+                      <motion.div
+                        className="absolute inset-0 bg-gradient-to-r from-white/5 via-white/10 to-white/5"
+                        initial={{ x: '-100%' }}
+                        whileHover={{ x: '100%' }}
+                        transition={{ duration: 0.6, ease: "easeInOut" }}
+                      />
+                    </motion.button>
+                  </motion.div>
+
+                  {/* About Content Box - Positioned absolutely below buttons */}
+                  <AnimatePresence>
+                    {showAbout && (
+                      <motion.div
+                        className="w-full max-w-lg mx-auto px-4 overflow-hidden"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ 
+                          duration: 0.6,
+                          ease: [0.33, 1, 0.68, 1]
+                        }}
+                      >
+                        <motion.div 
+                          className="pt-4 space-y-5 text-gray-300 leading-relaxed"
+                          initial={{ y: -10, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          exit={{ y: -10, opacity: 0 }}
+                          transition={{ 
+                            duration: 0.5,
+                            ease: [0.33, 1, 0.68, 1],
+                            delay: 0.1
+                          }}
+                        >
+                          <p className="text-center md:text-left">
+                            our media archive is a community based, independently operated media platform for artists of all kinds.
+                          </p>
+                          
+                          <p className="text-center md:text-left">
+                            we are currently invite only, but hope to open our platform up to all artists at some point in the future.
+                          </p>
+                          
+                          <p className="text-center md:text-left">
+                            if you have more questions, feel free to email me at{' '}
+                            <a
+                              href="mailto:1timgable@gmail.com"
+                              className="text-white underline hover:text-gray-400 transition-colors"
+                            >
+                              1timgable@gmail.com
+                            </a>
+                          </p>
+                          
+                          <p className="text-sm text-gray-500 italic text-center md:text-left pb-4">
+                            thank you for visiting!
+                          </p>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
+  );
+}
