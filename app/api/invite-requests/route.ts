@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { sendInviteRequestNotification } from "@/lib/notifications/email";
 
 type InviteRequestPayload = {
   email?: string;
@@ -46,6 +47,17 @@ export async function POST(request: Request) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    try {
+      await sendInviteRequestNotification({
+        requesterEmail: email,
+        message,
+        requestId: data.id,
+        createdAt: data.created_at,
+      });
+    } catch (emailError) {
+      console.error("Failed to send invite request notification email:", emailError);
     }
 
     return NextResponse.json({ inviteRequest: data }, { status: 201 });

@@ -66,6 +66,10 @@ Required variables:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server only; never expose in client code)
+- `APP_BASE_URL` (used in approval emails to build `/create-password` redirect)
+- `RESEND_API_KEY` (optional; enables admin email notifications)
+- `FROM_EMAIL` (optional; sender identity for app emails)
+- `NOTIFY_OWNER_EMAIL` (optional; receives invite request notifications)
 
 2. In Supabase SQL Editor, run schema:
 
@@ -82,6 +86,21 @@ npm run dev
 - `POST /api/invite-requests`
 - `GET /api/profile` (requires `Authorization: Bearer <access_token>`)
 - `PATCH /api/profile` (requires `Authorization: Bearer <access_token>`)
+- `GET /api/admin/invite-requests` (admin-only; requires `Authorization: Bearer <access_token>`)
+- `POST /api/admin/invite-requests/:requestId/approve` (admin-only; sends Supabase invite email)
+- `POST /api/admin/invite-requests/:requestId/resend-link` (admin-only; resends password-setup link)
+- `POST /api/admin/invite-requests/:requestId/deny` (admin-only; requires `{ "reason": "..." }`, stores note, emails requester)
+- `DELETE /api/admin/invite-requests/:requestId` (admin-only; deletes previously handled request)
+
+To grant your owner account admin access, set `is_admin = true` on your row in `public.users`.
+
+Example in Supabase SQL Editor:
+
+```sql
+update public.users
+set is_admin = true
+where email = 'your-owner-email@example.com';
+```
 
 ## Learn More
 

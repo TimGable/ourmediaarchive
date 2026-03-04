@@ -48,25 +48,62 @@ async function getAuthContext(request: Request): Promise<AuthContext | null> {
 async function ensureAppUser(authUserId: string, email: string) {
   const supabase = createSupabaseServiceRoleClient();
 
-  const { data, error } = await supabase
+  const { data: byEmail, error: byEmailError } = await supabase
     .from("users")
-    .upsert(
-      {
-        auth_user_id: authUserId,
-        email,
-      },
-      {
-        onConflict: "auth_user_id",
-      },
-    )
-    .select("id")
-    .single();
+    .select("id, auth_user_id, is_admin")
+    .eq("email", email)
+    .maybeSingle();
 
-  if (error || !data?.id) {
-    throw new Error(error?.message ?? "Failed to ensure app user.");
+  if (byEmailError) {
+    throw new Error(byEmailError.message);
   }
 
-  return data.id as string;
+  if (byEmail?.id) {
+    if (byEmail.auth_user_id && byEmail.auth_user_id !== authUserId) {
+      throw new Error("Email is already linked to a different auth account.");
+    }
+
+    if (!byEmail.auth_user_id) {
+      const { data: updated, error: updateError } = await supabase
+        .from("users")
+        .update({ auth_user_id: authUserId })
+        .eq("id", byEmail.id)
+        .select("id, is_admin")
+        .single();
+
+      if (updateError || !updated?.id) {
+        throw new Error(updateError?.message ?? "Failed to link app user.");
+      }
+
+      return {
+        userId: updated.id as string,
+        isAdmin: Boolean(updated.is_admin),
+      };
+    }
+
+    return {
+      userId: byEmail.id as string,
+      isAdmin: Boolean(byEmail.is_admin),
+    };
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("users")
+    .insert({
+      auth_user_id: authUserId,
+      email,
+    })
+    .select("id, is_admin")
+    .single();
+
+  if (insertError || !inserted?.id) {
+    throw new Error(insertError?.message ?? "Failed to ensure app user.");
+  }
+
+  return {
+    userId: inserted.id as string,
+    isAdmin: Boolean(inserted.is_admin),
+  };
 }
 
 async function ensureProfile(userId: string, email: string) {
@@ -106,7 +143,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const userId = await ensureAppUser(auth.authUserId, auth.email);
+    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
     const profile = await ensureProfile(userId, auth.email);
 
     const supabase = createSupabaseServiceRoleClient();
@@ -126,6 +163,7 @@ export async function GET(request: Request) {
         displayName: profile.display_name,
         bio: profile.bio,
         categoryTags: (categories ?? []).map((row) => row.category),
+        isAdmin,
       },
     });
   } catch (error) {
@@ -149,7 +187,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const userId = await ensureAppUser(auth.authUserId, auth.email);
+    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
     await ensureProfile(userId, auth.email);
 
     const updates: Record<string, string> = {};
@@ -244,6 +282,7 @@ export async function PATCH(request: Request) {
         displayName: profile.display_name,
         bio: profile.bio,
         categoryTags: (categories ?? []).map((row) => row.category),
+        isAdmin,
       },
     });
   } catch (error) {

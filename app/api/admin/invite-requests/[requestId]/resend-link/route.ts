@@ -1,0 +1,195 @@
+import { NextResponse } from "next/server";
+import {
+  createSupabaseServerClient,
+  createSupabaseServiceRoleClient,
+} from "@/lib/supabase/server";
+import {
+  isEmailNotificationsEnabled,
+  sendApprovedInviteLinkEmail,
+} from "@/lib/notifications/email";
+
+type AuthContext = {
+  authUserId: string;
+  email: string;
+};
+
+function extractBearerToken(request: Request) {
+  const header = request.headers.get("authorization");
+  if (!header) return null;
+  const [scheme, token] = header.split(" ");
+  if (scheme?.toLowerCase() !== "bearer" || !token) return null;
+  return token;
+}
+
+async function getAuthContext(request: Request): Promise<AuthContext | null> {
+  const token = extractBearerToken(request);
+  if (!token) return null;
+
+  const authClient = createSupabaseServerClient();
+  const { data, error } = await authClient.auth.getUser(token);
+
+  if (error || !data.user?.id || !data.user.email) return null;
+
+  return {
+    authUserId: data.user.id,
+    email: data.user.email.toLowerCase(),
+  };
+}
+
+async function ensureAppUser(authUserId: string, email: string) {
+  const supabase = createSupabaseServiceRoleClient();
+
+  const { data: byEmail, error: byEmailError } = await supabase
+    .from("users")
+    .select("id, auth_user_id, is_admin")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (byEmailError) {
+    throw new Error(byEmailError.message);
+  }
+
+  if (byEmail?.id) {
+    if (byEmail.auth_user_id && byEmail.auth_user_id !== authUserId) {
+      throw new Error("Email is already linked to a different auth account.");
+    }
+
+    if (!byEmail.auth_user_id) {
+      const { data: updated, error: updateError } = await supabase
+        .from("users")
+        .update({ auth_user_id: authUserId })
+        .eq("id", byEmail.id)
+        .select("id, is_admin")
+        .single();
+
+      if (updateError || !updated?.id) {
+        throw new Error(updateError?.message ?? "Failed to link app user.");
+      }
+
+      return { userId: updated.id as string, isAdmin: Boolean(updated.is_admin) };
+    }
+
+    return { userId: byEmail.id as string, isAdmin: Boolean(byEmail.is_admin) };
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("users")
+    .insert({
+      auth_user_id: authUserId,
+      email,
+    })
+    .select("id, is_admin")
+    .single();
+
+  if (insertError || !inserted?.id) {
+    throw new Error(insertError?.message ?? "Failed to ensure app user.");
+  }
+
+  return { userId: inserted.id as string, isAdmin: Boolean(inserted.is_admin) };
+}
+
+function getInviteRedirectUrl() {
+  const base = process.env.APP_BASE_URL || "http://localhost:3000";
+  return `${base.replace(/\/+$/, "")}/create-password`;
+}
+
+type Params = {
+  params: Promise<{ requestId: string }>;
+};
+
+export async function POST(request: Request, { params }: Params) {
+  try {
+    const auth = await getAuthContext(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
+    if (!isAdmin) {
+      return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    }
+
+    const { requestId } = await params;
+    if (!requestId) {
+      return NextResponse.json({ error: "Missing request id." }, { status: 400 });
+    }
+
+    const supabase = createSupabaseServiceRoleClient();
+    const { data: inviteRequest, error: fetchError } = await supabase
+      .from("invite_requests")
+      .select("id, email, status")
+      .eq("id", requestId)
+      .single();
+
+    if (fetchError || !inviteRequest) {
+      return NextResponse.json({ error: "Invite request not found." }, { status: 404 });
+    }
+
+    if (inviteRequest.status !== "approved") {
+      return NextResponse.json(
+        { error: "Only approved requests can receive a resent sign-in link." },
+        { status: 400 },
+      );
+    }
+
+    const redirectTo = getInviteRedirectUrl();
+    const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+      inviteRequest.email,
+      { redirectTo },
+    );
+
+    if (inviteError) {
+      return NextResponse.json(
+        { error: `Failed to send invite email: ${inviteError.message}` },
+        { status: 500 },
+      );
+    }
+
+    // Optional secondary copy via Resend (non-blocking).
+    if (isEmailNotificationsEnabled()) {
+      const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+        type: "invite",
+        email: inviteRequest.email,
+        options: { redirectTo },
+      });
+
+      if (!linkError && linkData?.properties?.action_link) {
+        try {
+          await sendApprovedInviteLinkEmail({
+            recipientEmail: inviteRequest.email,
+            actionLink: linkData.properties.action_link,
+          });
+        } catch (mailError) {
+          console.error("Optional Resend invite copy failed:", mailError);
+        }
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { error: invitesInsertError } = await supabase.from("invites").insert({
+      code: crypto.randomUUID().replace(/-/g, ""),
+      email: inviteRequest.email,
+      status: "sent",
+      created_by_user_id: userId,
+      request_id: requestId,
+      sent_at: nowIso,
+      expires_at: expiresAt,
+    });
+
+    if (invitesInsertError) {
+      console.error("Failed to insert resent invites record:", invitesInsertError.message);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      requestId,
+      email: inviteRequest.email,
+      redirectTo,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

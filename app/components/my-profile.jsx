@@ -1,14 +1,19 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Upload, Plus, X, Edit2, ChevronRight, Music, Palette, Video, Check, Settings } from "lucide-react";
 import { ChangePasswordModal } from "./change-password-modal";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function MyProfile({ onBack }) {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [isEditing, setIsEditing] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileNotice, setProfileNotice] = useState({ type: "", message: "" });
   // TODO: Fetch user profile data from Supabase
   const [profileData, setProfileData] = useState({
     username: '',
+    email: '',
     displayName: '',
     bio: '',
     avatar: '',
@@ -32,9 +37,53 @@ export function MyProfile({ onBack }) {
     }
   };
 
-  const handleSaveProfile = () => {
-    // TODO: Save to Supabase
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadEmail() {
+      const { data, error } = await supabase.auth.getUser();
+      if (!mounted || error || !data?.user?.email) return;
+      setProfileData((prev) => ({ ...prev, email: data.user.email || "" }));
+    }
+
+    loadEmail();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
+  const handleSaveProfile = async () => {
+    setProfileNotice({ type: "", message: "" });
+    setIsSaving(true);
+
+    const { data: userData, error: getUserError } = await supabase.auth.getUser();
+    if (getUserError || !userData?.user) {
+      setProfileNotice({ type: "error", message: "Could not verify your session. Please sign in again." });
+      setIsSaving(false);
+      return;
+    }
+
+    const currentEmail = userData.user.email || "";
+    const nextEmail = profileData.email.trim().toLowerCase();
+
+    if (nextEmail && nextEmail !== currentEmail) {
+      const { error: emailUpdateError } = await supabase.auth.updateUser({ email: nextEmail });
+      if (emailUpdateError) {
+        setProfileNotice({ type: "error", message: emailUpdateError.message || "Failed to update email." });
+        setIsSaving(false);
+        return;
+      }
+
+      setProfileNotice({
+        type: "success",
+        message: "Profile saved. Check your inbox to confirm the email change.",
+      });
+    } else {
+      setProfileNotice({ type: "success", message: "Profile saved." });
+    }
+
     setIsEditing(false);
+    setIsSaving(false);
   };
 
   const categories = [
@@ -83,6 +132,18 @@ export function MyProfile({ onBack }) {
           </motion.button>
         )}
       </div>
+
+      {profileNotice.message && (
+        <div
+          className={`mb-6 border px-4 py-3 text-sm ${
+            profileNotice.type === "error"
+              ? "border-red-500/40 bg-red-500/10 text-red-400"
+              : "border-green-500/40 bg-green-500/10 text-green-400"
+          }`}
+        >
+          {profileNotice.message}
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         {isEditing ? (
@@ -156,6 +217,23 @@ export function MyProfile({ onBack }) {
                   </div>
 
                   <div className="mb-6">
+                    <label className="block text-sm text-gray-400 mb-2">
+                      email
+                      <span className="text-gray-500 ml-2 text-xs">(used for sign in)</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={profileData.email}
+                      onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+                      placeholder="email address"
+                      className="w-full bg-transparent border border-white/20 px-4 py-3 focus:border-white/60 focus:outline-none transition-colors"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      changing email may require confirmation via inbox.
+                    </p>
+                  </div>
+
+                  <div className="mb-6">
                     <label className="block text-sm text-gray-400 mb-2">bio</label>
                     <textarea
                       value={profileData.bio}
@@ -169,14 +247,18 @@ export function MyProfile({ onBack }) {
                   <div className="flex gap-4">
                     <motion.button
                       onClick={handleSaveProfile}
+                      disabled={isSaving}
                       className="border border-white/40 px-8 py-3 hover:border-white/60 hover:bg-white/10 transition-all duration-300"
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                     >
-                      save profile
+                      {isSaving ? "saving..." : "save profile"}
                     </motion.button>
                     <motion.button
-                      onClick={() => setIsEditing(false)}
+                      onClick={() => {
+                        setIsEditing(false);
+                        setProfileNotice({ type: "", message: "" });
+                      }}
                       className="border border-white/20 px-8 py-3 hover:border-white/40 hover:bg-white/5 transition-all duration-300 text-gray-400"
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
@@ -325,6 +407,7 @@ export function MyProfile({ onBack }) {
                 <div className="flex-1 text-center md:text-left">
                   <h3 className="text-3xl md:text-4xl mb-2">{profileData.displayName}</h3>
                   <p className="text-gray-400 mb-4">@{profileData.username}</p>
+                  {profileData.email && <p className="text-gray-500 mb-4">{profileData.email}</p>}
                   
                   {/* Category Tags */}
                   {profileData.categoryTags.length > 0 && (

@@ -3,23 +3,11 @@ import { motion } from "motion/react";
 import { InteractiveBackground } from "./interactive-background";
 
 export function SignIn({ onBack, onSignIn, onRequestInvite }) {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
   const [isShaking, setIsShaking] = useState(false);
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      const x = (e.clientX - window.innerWidth / 2) / window.innerWidth;
-      const y = (e.clientY - window.innerHeight / 2) / window.innerHeight;
-      setMousePosition({ x, y });
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
 
   useEffect(() => {
     if (!isShaking) return;

@@ -1,15 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 
 export function InteractiveBackground() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-  const [particles, setParticles] = useState([]);
-  const containerRef = useRef(null);
-
-  // Initialize particles
-  useEffect(() => {
+  const [particles, setParticles] = useState(() => {
     const initParticles = [];
-    const particleCount = 35; // Reduced from 80
+    const particleCount = 24;
 
     for (let i = 0; i < particleCount; i++) {
       initParticles.push({
@@ -19,13 +15,13 @@ export function InteractiveBackground() {
         size: Math.random() * 2 + 0.5, // Reduced: 0.5-2.5px (was 1-5px)
         speedX: (Math.random() - 0.5) * 0.2,
         speedY: (Math.random() - 0.5) * 0.2,
-        opacity: Math.random() * 0.15 + 0.05, // Reduced: 0.05-0.2 (was 0.1-0.6)
+        opacity: Math.random() * 0.16 + 0.08, // Slight bump for better visibility
         blur: 0, // Removed blur for performance
       });
     }
 
-    setParticles(initParticles);
-  }, []);
+    return initParticles;
+  });
 
   // Mouse move handler
   useEffect(() => {
@@ -77,23 +73,23 @@ export function InteractiveBackground() {
           };
         })
       );
-    }, 50);
+    }, 80);
 
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <div ref={containerRef} className="absolute inset-0 overflow-hidden">
+    <div className="absolute inset-0 overflow-hidden">
       {/* Base gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-black via-black to-gray-900" />
+      <div className="absolute inset-0 bg-gradient-to-br from-black via-zinc-950 to-gray-800" />
 
       {/* Grid overlay - More visible */}
       <div
-        className="absolute inset-0 opacity-40"
+        className="absolute inset-0 opacity-50"
         style={{
           backgroundImage: `
-            linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px)
+            linear-gradient(rgba(255, 255, 255, 0.11) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.11) 1px, transparent 1px)
           `,
           backgroundSize: '80px 80px',
           transform: `translate(${mousePosition.x * 20}px, ${mousePosition.y * 20}px)`,
@@ -123,7 +119,7 @@ export function InteractiveBackground() {
             }}
             animate={{
               x: mousePosition.x * -30 + (repelStrength * distX * -2),
-              y: mousePosition.x * -30 + (repelStrength * distY * -2),
+              y: mousePosition.y * -30 + (repelStrength * distY * -2),
             }}
             transition={{
               type: "tween",
@@ -138,15 +134,15 @@ export function InteractiveBackground() {
       <div
         className="absolute inset-0"
         style={{
-          background: 'radial-gradient(circle at 50% 50%, transparent 0%, rgba(0, 0, 0, 0.4) 100%)',
+          background: 'radial-gradient(circle at 50% 50%, transparent 0%, rgba(0, 0, 0, 0.3) 100%)',
         }}
       />
 
       {/* Corner accent lines */}
-      <div className="absolute top-0 left-0 w-32 h-32 border-t-2 border-l-2 border-white/10" />
-      <div className="absolute top-0 right-0 w-32 h-32 border-t-2 border-r-2 border-white/10" />
-      <div className="absolute bottom-0 left-0 w-32 h-32 border-b-2 border-l-2 border-white/10" />
-      <div className="absolute bottom-0 right-0 w-32 h-32 border-b-2 border-r-2 border-white/10" />
+      <div className="absolute top-0 left-0 w-32 h-32 border-t-2 border-l-2 border-white/15" />
+      <div className="absolute top-0 right-0 w-32 h-32 border-t-2 border-r-2 border-white/15" />
+      <div className="absolute bottom-0 left-0 w-32 h-32 border-b-2 border-l-2 border-white/15" />
+      <div className="absolute bottom-0 right-0 w-32 h-32 border-b-2 border-r-2 border-white/15" />
     </div>
   );
 }

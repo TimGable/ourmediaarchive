@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence, LayoutGroup } from "motion/react";
+import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { SignIn } from "./sign-in";
 import { RequestInvite } from "./request-invite";
 import { BrowseArtists } from "./browse-artists";
@@ -13,24 +13,8 @@ export function LandingPage({ onSignIn }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showSignIn, setShowSignIn] = useState(false);
   const [showRequestInvite, setShowRequestInvite] = useState(false);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [hoveredButton, setHoveredButton] = useState(null);
   const [showAbout, setShowAbout] = useState(false);
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      // Calculate mouse position relative to viewport center
-      const x = (e.clientX - window.innerWidth / 2) / window.innerWidth;
-      const y = (e.clientY - window.innerHeight / 2) / window.innerHeight;
-      setMousePosition({ x, y });
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
-
-  // Artists data - empty until people sign up
-  const artists = [];
 
   if (showSignIn) {
     return (
@@ -220,7 +204,7 @@ export function LandingPage({ onSignIn }) {
                       className="relative group px-6 py-2 border border-white/20 hover:border-white/40 transition-all duration-300 overflow-hidden touch-manipulation"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 1, duration: 0.6 }}
+                      transition={{ delay: 0.8, duration: 0.5 }}
                     >
                       <span className="relative z-10 text-xs md:text-sm tracking-widest text-gray-400 group-hover:text-white transition-colors">
                         {showAbout ? 'close' : 'about'}

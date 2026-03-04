@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { BrowseArtists } from "./browse-artists";
 import { ArtistProfile } from "./artist-profile";
@@ -10,27 +10,47 @@ import { CategorySelector } from "./category-selector";
 import { Feed } from "./feed";
 import { Menu, X } from "lucide-react";
 import { InteractiveBackground } from "./interactive-background";
+import { AdminPanel } from "./admin-panel";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function Dashboard({ onSignOut }) {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [currentView, setCurrentView] = useState('home');
   const [selectedArtist, setSelectedArtist] = useState(null);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [hoveredButton, setHoveredButton] = useState(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const handleMouseMove = (e) => {
-      const x = (e.clientX - window.innerWidth / 2) / window.innerWidth;
-      const y = (e.clientY - window.innerHeight / 2) / window.innerHeight;
-      setMousePosition({ x, y });
-    };
+    let mounted = true;
 
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
+    async function loadAccess() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) return;
+
+      const response = await fetch("/api/profile", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      if (!response.ok) return;
+
+      const payload = await response.json();
+      if (!mounted) return;
+
+      setIsAdmin(Boolean(payload?.profile?.isAdmin));
+    }
+
+    loadAccess();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
   const handleArtistClick = (artist) => {
     setSelectedArtist(artist);
@@ -72,6 +92,23 @@ export function Dashboard({ onSignOut }) {
               
               {/* Desktop Navigation */}
               <div className="hidden lg:flex gap-8 items-center">
+                {isAdmin && (
+                  <motion.button
+                    onClick={() => {
+                      setCurrentView('admin');
+                    }}
+                    className="text-gray-400 hover:text-white transition-colors relative group"
+                    whileHover={{ y: -2 }}
+                  >
+                    administrator page
+                    <motion.div
+                      className="absolute -bottom-1 left-0 right-0 h-px bg-white"
+                      initial={{ scaleX: 0 }}
+                      whileHover={{ scaleX: 1 }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </motion.button>
+                )}
                 <motion.button
                   onClick={() => {
                     setSelectedArtist(null);
@@ -124,6 +161,18 @@ export function Dashboard({ onSignOut }) {
                   transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
                 >
                   <div className="px-4 py-4 space-y-2">
+                    {isAdmin && (
+                      <motion.button
+                        onClick={() => {
+                          setCurrentView('admin');
+                          setShowMobileMenu(false);
+                        }}
+                        className="w-full text-left px-4 py-3 text-gray-400 hover:text-white hover:bg-white/5 transition-colors border border-white/10 hover:border-white/20 touch-manipulation"
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        administrator page
+                      </motion.button>
+                    )}
                     <motion.button
                       onClick={() => {
                         setSelectedArtist(null);
@@ -234,6 +283,10 @@ export function Dashboard({ onSignOut }) {
 
             {currentView === 'profile' && (
               <MyProfile onBack={() => setCurrentView('home')} />
+            )}
+
+            {currentView === 'admin' && isAdmin && (
+              <AdminPanel onBack={() => setCurrentView('home')} />
             )}
 
             {currentView === 'artist' && selectedArtist && (
