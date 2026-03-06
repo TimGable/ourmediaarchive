@@ -13,6 +13,10 @@ import { InteractiveBackground } from "./interactive-background";
 import { AdminPanel } from "./admin-panel";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
+function isGeneratedUsername(username) {
+  return typeof username === "string" && /_[a-f0-9]{8}$/.test(username);
+}
+
 export function Dashboard({ onSignOut }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [currentView, setCurrentView] = useState('home');
@@ -22,6 +26,7 @@ export function Dashboard({ onSignOut }) {
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [forceProfileSetup, setForceProfileSetup] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -44,6 +49,12 @@ export function Dashboard({ onSignOut }) {
       if (!mounted) return;
 
       setIsAdmin(Boolean(payload?.profile?.isAdmin));
+
+      const setupRequired = isGeneratedUsername(payload?.profile?.username);
+      setForceProfileSetup(setupRequired);
+      if (setupRequired) {
+        setCurrentView("profile");
+      }
     }
 
     loadAccess();
@@ -61,6 +72,8 @@ export function Dashboard({ onSignOut }) {
     setCurrentTrack({ track, release, artist });
     setIsPlaying(true);
   };
+
+  const canLeaveProfileSetup = !forceProfileSetup;
 
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden">
@@ -81,6 +94,7 @@ export function Dashboard({ onSignOut }) {
               <motion.h1
                 className="text-xl md:text-2xl tracking-wide cursor-pointer"
                 onClick={() => {
+                  if (!canLeaveProfileSetup) return;
                   setCurrentView('home');
                   setShowMobileMenu(false);
                 }}
@@ -95,6 +109,7 @@ export function Dashboard({ onSignOut }) {
                 {isAdmin && (
                   <motion.button
                     onClick={() => {
+                      if (!canLeaveProfileSetup) return;
                       setCurrentView('admin');
                     }}
                     className="text-gray-400 hover:text-white transition-colors relative group"
@@ -110,10 +125,11 @@ export function Dashboard({ onSignOut }) {
                   </motion.button>
                 )}
                 <motion.button
-                  onClick={() => {
-                    setSelectedArtist(null);
-                    setCurrentView('profile');
-                  }}
+                    onClick={() => {
+                      if (!canLeaveProfileSetup) return;
+                      setSelectedArtist(null);
+                      setCurrentView('profile');
+                    }}
                   className="text-gray-400 hover:text-white transition-colors relative group"
                   whileHover={{ y: -2 }}
                 >
@@ -164,6 +180,7 @@ export function Dashboard({ onSignOut }) {
                     {isAdmin && (
                       <motion.button
                         onClick={() => {
+                          if (!canLeaveProfileSetup) return;
                           setCurrentView('admin');
                           setShowMobileMenu(false);
                         }}
@@ -214,8 +231,9 @@ export function Dashboard({ onSignOut }) {
                   
                   {/* Browse Artists Button */}
                   <motion.button
-                    onClick={() => setCurrentView('categories')}
-                    className="border border-white/40 px-6 md:px-8 py-3 hover:border-white/60 hover:bg-white/5 transition-all duration-300 group relative touch-manipulation inline-block"
+                  onClick={() => setCurrentView('categories')}
+                  disabled={!canLeaveProfileSetup}
+                  className="border border-white/40 px-6 md:px-8 py-3 hover:border-white/60 hover:bg-white/5 transition-all duration-300 group relative touch-manipulation inline-block"
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                   >
@@ -246,11 +264,15 @@ export function Dashboard({ onSignOut }) {
             {currentView === 'categories' && (
               <CategorySelector
                 onCategorySelect={(category) => {
+                  if (!canLeaveProfileSetup) return;
                   if (category === 'music') setCurrentView('browse-music');
                   else if (category === 'visual') setCurrentView('browse-visual');
                   else if (category === 'video') setCurrentView('browse-video');
                 }}
-                onBack={() => setCurrentView('home')}
+                onBack={() => {
+                  if (!canLeaveProfileSetup) return;
+                  setCurrentView('home');
+                }}
               />
             )}
 
@@ -282,7 +304,11 @@ export function Dashboard({ onSignOut }) {
             )}
 
             {currentView === 'profile' && (
-              <MyProfile onBack={() => setCurrentView('home')} />
+              <MyProfile
+                forceSetup={forceProfileSetup}
+                onSetupComplete={() => setForceProfileSetup(false)}
+                onBack={() => setCurrentView('home')}
+              />
             )}
 
             {currentView === 'admin' && isAdmin && (

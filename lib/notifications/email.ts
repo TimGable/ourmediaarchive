@@ -17,6 +17,8 @@ export async function sendInviteRequestNotification(params: {
   message: string;
   requestId: string;
   createdAt: string;
+  approveUrl?: string;
+  denyUrl?: string;
 }) {
   if (!hasEmailConfig()) return;
 
@@ -32,13 +34,36 @@ export async function sendInviteRequestNotification(params: {
     "",
     "Message:",
     params.message,
+    "",
+    params.approveUrl ? `Approve: ${params.approveUrl}` : "",
+    params.denyUrl ? `Deny: ${params.denyUrl}` : "",
   ].join("\n");
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #e5e5e5; background: #0b0b0b; padding: 24px;">
+      <h2 style="margin: 0 0 12px 0; color: #ffffff;">New invite request</h2>
+      <p style="margin: 0 0 8px 0;"><strong>Request ID:</strong> ${params.requestId}</p>
+      <p style="margin: 0 0 8px 0;"><strong>Submitted:</strong> ${params.createdAt}</p>
+      <p style="margin: 0 0 16px 0;"><strong>Email:</strong> ${params.requesterEmail}</p>
+      <p style="margin: 0 0 8px 0;"><strong>Message:</strong></p>
+      <div style="border: 1px solid #2a2a2a; padding: 12px; background: #111111; white-space: pre-wrap;">${params.message}</div>
+      ${
+        params.approveUrl && params.denyUrl
+          ? `<div style="margin-top: 20px;">
+              <a href="${params.approveUrl}" style="display: inline-block; margin-right: 10px; padding: 10px 14px; background: #16a34a; color: white; text-decoration: none; border-radius: 4px;">Approve</a>
+              <a href="${params.denyUrl}" style="display: inline-block; padding: 10px 14px; background: #dc2626; color: white; text-decoration: none; border-radius: 4px;">Deny</a>
+            </div>`
+          : ""
+      }
+    </div>
+  `;
 
   await resend.emails.send({
     from: FROM_EMAIL as string,
     to: [NOTIFY_OWNER_EMAIL as string],
     subject,
     text,
+    html,
   });
 }
 

@@ -93,6 +93,16 @@ function getInviteRedirectUrl() {
   return `${base.replace(/\/+$/, "")}/create-password`;
 }
 
+function isAlreadyRegisteredAuthError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes("already been registered") || normalized.includes("already registered");
+}
+
+function isEmailRateLimitAuthError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes("rate limit") && normalized.includes("email");
+}
+
 type Params = {
   params: Promise<{ requestId: string }>;
 };
@@ -134,31 +144,81 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const redirectTo = getInviteRedirectUrl();
+    let linkType: "invite" | "recovery" = "invite";
+    let sentViaResendFallback = false;
+    let generatedActionLink: string | null = null;
     const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
       inviteRequest.email,
       { redirectTo },
     );
 
     if (inviteError) {
-      return NextResponse.json(
-        { error: `Failed to send invite email: ${inviteError.message}` },
-        { status: 500 },
-      );
+      if (!isAlreadyRegisteredAuthError(inviteError.message || "")) {
+        if (!isEmailRateLimitAuthError(inviteError.message || "")) {
+          return NextResponse.json(
+            { error: `Failed to send invite email: ${inviteError.message}` },
+            { status: 500 },
+          );
+        }
+
+        if (!isEmailNotificationsEnabled()) {
+          return NextResponse.json(
+            {
+              error:
+                "Email rate limit exceeded. Configure RESEND_API_KEY, FROM_EMAIL, and NOTIFY_OWNER_EMAIL to use fallback delivery.",
+            },
+            { status: 429 },
+          );
+        }
+
+        const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+          type: linkType,
+          email: inviteRequest.email,
+          options: { redirectTo },
+        });
+
+        if (linkError || !linkData?.properties?.action_link) {
+          return NextResponse.json(
+            { error: `Failed to generate fallback invite link: ${linkError?.message || "Unknown error."}` },
+            { status: 500 },
+          );
+        }
+
+        generatedActionLink = linkData.properties.action_link;
+        await sendApprovedInviteLinkEmail({
+          recipientEmail: inviteRequest.email,
+          actionLink: generatedActionLink,
+        });
+        sentViaResendFallback = true;
+      } else {
+        const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(
+          inviteRequest.email,
+          { redirectTo },
+        );
+        if (recoveryError) {
+          return NextResponse.json(
+            { error: `Failed to send recovery email: ${recoveryError.message}` },
+            { status: 500 },
+          );
+        }
+        linkType = "recovery";
+      }
     }
 
     // Optional secondary copy via Resend (non-blocking).
-    if (isEmailNotificationsEnabled()) {
+    if (!sentViaResendFallback && isEmailNotificationsEnabled()) {
       const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
-        type: "invite",
+        type: linkType,
         email: inviteRequest.email,
         options: { redirectTo },
       });
 
       if (!linkError && linkData?.properties?.action_link) {
+        generatedActionLink = linkData.properties.action_link;
         try {
           await sendApprovedInviteLinkEmail({
             recipientEmail: inviteRequest.email,
-            actionLink: linkData.properties.action_link,
+            actionLink: generatedActionLink,
           });
         } catch (mailError) {
           console.error("Optional Resend invite copy failed:", mailError);
@@ -201,9 +261,12 @@ export async function POST(request: Request, { params }: Params) {
       requestId,
       email: inviteRequest.email,
       redirectTo,
+      linkType,
+      delivery: sentViaResendFallback ? "resend_fallback" : "supabase",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

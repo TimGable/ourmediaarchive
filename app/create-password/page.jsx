@@ -145,8 +145,12 @@ export default function CreatePasswordPage() {
       return;
     }
 
-    setSuccess("Password created successfully. You can now sign in.");
+    setSuccess("Password created successfully. Redirecting to profile setup...");
     setIsSubmitting(false);
+
+    window.setTimeout(() => {
+      window.location.assign("/");
+    }, 500);
   }
 
   return (
@@ -171,7 +175,7 @@ export default function CreatePasswordPage() {
             </div>
             <h1 className="text-3xl mb-2">create password</h1>
             <p className="text-gray-400 text-sm">
-              set your password to activate your invite account
+              set your password to get started
             </p>
           </motion.div>
 

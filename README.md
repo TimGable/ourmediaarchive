@@ -67,6 +67,7 @@ Required variables:
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server only; never expose in client code)
 - `APP_BASE_URL` (used in approval emails to build `/create-password` redirect)
+- `INVITE_EMAIL_ACTION_SECRET` (optional; secret for one-click owner email approve/deny buttons)
 - `RESEND_API_KEY` (optional; enables admin email notifications)
 - `FROM_EMAIL` (optional; sender identity for app emails)
 - `NOTIFY_OWNER_EMAIL` (optional; receives invite request notifications)
@@ -91,6 +92,7 @@ npm run dev
 - `POST /api/admin/invite-requests/:requestId/resend-link` (admin-only; resends password-setup link)
 - `POST /api/admin/invite-requests/:requestId/deny` (admin-only; requires `{ "reason": "..." }`, stores note, emails requester)
 - `DELETE /api/admin/invite-requests/:requestId` (admin-only; deletes previously handled request)
+- `GET /api/admin/invite-requests/email-action?requestId=...&action=approve|deny&token=...` (owner email quick action)
 
 To grant your owner account admin access, set `is_admin = true` on your row in `public.users`.
 

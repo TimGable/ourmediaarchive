@@ -4,13 +4,17 @@ import { Upload, Plus, X, Edit2, ChevronRight, Music, Palette, Video, Check, Set
 import { ChangePasswordModal } from "./change-password-modal";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export function MyProfile({ onBack }) {
+function isGeneratedUsername(username) {
+  return typeof username === "string" && /_[a-f0-9]{8}$/.test(username);
+}
+
+export function MyProfile({ onBack, forceSetup = false, onSetupComplete }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(forceSetup);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [profileNotice, setProfileNotice] = useState({ type: "", message: "" });
-  // TODO: Fetch user profile data from Supabase
   const [profileData, setProfileData] = useState({
     username: '',
     email: '',
@@ -22,6 +26,7 @@ export function MyProfile({ onBack }) {
 
   // TODO: Fetch user releases from Supabase
   const releases = [];
+  const isEditMode = forceSetup || isEditing;
 
   const toggleCategoryTag = (tag) => {
     if (profileData.categoryTags.includes(tag)) {
@@ -40,13 +45,54 @@ export function MyProfile({ onBack }) {
   useEffect(() => {
     let mounted = true;
 
-    async function loadEmail() {
-      const { data, error } = await supabase.auth.getUser();
-      if (!mounted || error || !data?.user?.email) return;
-      setProfileData((prev) => ({ ...prev, email: data.user.email || "" }));
+    async function loadProfile() {
+      setIsLoadingProfile(true);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+      if (!session?.access_token) {
+        setProfileNotice({ type: "error", message: "Session expired. Please sign in again." });
+        setIsLoadingProfile(false);
+        return;
+      }
+
+      const [authUser, profileResponse] = await Promise.all([
+        supabase.auth.getUser(),
+        fetch("/api/profile", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }),
+      ]);
+
+      if (!mounted) return;
+
+      const currentEmail = authUser?.data?.user?.email || "";
+      if (!profileResponse.ok) {
+        const payload = await profileResponse.json().catch(() => ({}));
+        setProfileNotice({ type: "error", message: payload?.error || "Failed to load profile." });
+        setIsLoadingProfile(false);
+        return;
+      }
+
+      const payload = await profileResponse.json();
+      const apiProfile = payload?.profile;
+
+      setProfileData((prev) => ({
+        ...prev,
+        username: apiProfile?.username || "",
+        displayName: apiProfile?.displayName || "",
+        bio: apiProfile?.bio || "",
+        categoryTags: apiProfile?.categoryTags || [],
+        email: currentEmail,
+      }));
+      setIsLoadingProfile(false);
     }
 
-    loadEmail();
+    loadProfile();
     return () => {
       mounted = false;
     };
@@ -56,9 +102,65 @@ export function MyProfile({ onBack }) {
     setProfileNotice({ type: "", message: "" });
     setIsSaving(true);
 
+    const normalizedUsername = profileData.username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,32}$/.test(normalizedUsername)) {
+      setProfileNotice({
+        type: "error",
+        message: "Username must be 3-32 characters using lowercase letters, numbers, or underscores.",
+      });
+      setIsSaving(false);
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setProfileNotice({ type: "error", message: "Could not verify your session. Please sign in again." });
+      setIsSaving(false);
+      return;
+    }
+
+    const profileResponse = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        username: normalizedUsername,
+        displayName: profileData.displayName.trim() || normalizedUsername,
+        bio: profileData.bio,
+        categoryTags: profileData.categoryTags,
+      }),
+    });
+
+    const profilePayload = await profileResponse.json().catch(() => ({}));
+    if (!profileResponse.ok) {
+      const rawError = String(profilePayload?.error || "");
+      const uniqueUsername = rawError.toLowerCase().includes("profiles_username_key");
+      setProfileNotice({
+        type: "error",
+        message: uniqueUsername
+          ? "That username is already taken. Please choose another."
+          : profilePayload?.error || "Failed to save profile.",
+      });
+      setIsSaving(false);
+      return;
+    }
+
+    setProfileData((prev) => ({
+      ...prev,
+      username: profilePayload?.profile?.username || prev.username,
+      displayName: profilePayload?.profile?.displayName || prev.displayName,
+      bio: profilePayload?.profile?.bio || "",
+      categoryTags: profilePayload?.profile?.categoryTags || [],
+    }));
+
     const { data: userData, error: getUserError } = await supabase.auth.getUser();
     if (getUserError || !userData?.user) {
-      setProfileNotice({ type: "error", message: "Could not verify your session. Please sign in again." });
+      setProfileNotice({ type: "success", message: "Profile saved." });
+      setIsEditing(false);
       setIsSaving(false);
       return;
     }
@@ -82,6 +184,10 @@ export function MyProfile({ onBack }) {
       setProfileNotice({ type: "success", message: "Profile saved." });
     }
 
+    if (forceSetup && !isGeneratedUsername(normalizedUsername)) {
+      onSetupComplete?.();
+    }
+
     setIsEditing(false);
     setIsSaving(false);
   };
@@ -98,28 +204,29 @@ export function MyProfile({ onBack }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
-      {/* Back button */}
-      <motion.button
-        onClick={onBack}
-        className="mb-6 md:mb-8 text-gray-400 hover:text-white transition-colors relative group inline-block touch-manipulation"
-        whileHover={{ x: -5 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        <span className="inline-block">←</span>
-        <span className="ml-2">back</span>
-        <motion.div
-          className="absolute -bottom-1 left-0 h-px bg-white"
-          initial={{ width: 0 }}
-          whileHover={{ width: "100%" }}
-          transition={{ duration: 0.3 }}
-        />
-      </motion.button>
+      {!forceSetup && (
+        <motion.button
+          onClick={onBack}
+          className="mb-6 md:mb-8 text-gray-400 hover:text-white transition-colors relative group inline-block touch-manipulation"
+          whileHover={{ x: -5 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="inline-block" aria-hidden="true">{"\u2190"}</span>
+          <span className="ml-2">back</span>
+          <motion.div
+            className="absolute -bottom-1 left-0 h-px bg-white"
+            initial={{ width: 0 }}
+            whileHover={{ width: "100%" }}
+            transition={{ duration: 0.3 }}
+          />
+        </motion.button>
+      )}
 
       <div className="flex items-center justify-between mb-8 md:mb-12">
         <h2 className="text-3xl md:text-4xl">my profile</h2>
         
         {/* Edit Profile Button - Only show in view mode */}
-        {!isEditing && (
+        {!isEditMode && (
           <motion.button
             onClick={() => setIsEditing(true)}
             className="flex items-center gap-2 border border-white/40 px-4 md:px-6 py-2.5 md:py-3 hover:border-white/60 hover:bg-white/10 transition-all duration-300 touch-manipulation"
@@ -145,8 +252,20 @@ export function MyProfile({ onBack }) {
         </div>
       )}
 
+      {forceSetup && (
+        <div className="mb-6 border border-white/20 bg-white/5 px-4 py-3 text-sm text-gray-300">
+          Account setup: choose a unique @username to continue. Bio and profile image are optional.
+        </div>
+      )}
+
+      {isLoadingProfile && (
+        <div className="mb-6 border border-white/20 bg-white/5 px-4 py-3 text-sm text-gray-400">
+          loading profile...
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
-        {isEditing ? (
+        {isEditMode ? (
           // EDIT MODE
           <motion.div
             key="edit"
@@ -254,17 +373,19 @@ export function MyProfile({ onBack }) {
                     >
                       {isSaving ? "saving..." : "save profile"}
                     </motion.button>
-                    <motion.button
-                      onClick={() => {
-                        setIsEditing(false);
-                        setProfileNotice({ type: "", message: "" });
-                      }}
-                      className="border border-white/20 px-8 py-3 hover:border-white/40 hover:bg-white/5 transition-all duration-300 text-gray-400"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      cancel
-                    </motion.button>
+                    {!forceSetup && (
+                      <motion.button
+                        onClick={() => {
+                          setIsEditing(false);
+                          setProfileNotice({ type: "", message: "" });
+                        }}
+                        className="border border-white/20 px-8 py-3 hover:border-white/40 hover:bg-white/5 transition-all duration-300 text-gray-400"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        cancel
+                      </motion.button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -602,3 +723,4 @@ export function MyProfile({ onBack }) {
     </motion.div>
   );
 }
+

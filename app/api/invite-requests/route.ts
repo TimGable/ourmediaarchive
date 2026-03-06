@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { sendInviteRequestNotification } from "@/lib/notifications/email";
+import { createInviteEmailActionToken } from "@/lib/invite-request-email-actions";
 
 type InviteRequestPayload = {
   email?: string;
@@ -9,6 +10,11 @@ type InviteRequestPayload = {
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getAppBaseUrl() {
+  const base = process.env.APP_BASE_URL || "http://localhost:3000";
+  return base.replace(/\/+$/, "");
 }
 
 export async function POST(request: Request) {
@@ -50,11 +56,23 @@ export async function POST(request: Request) {
     }
 
     try {
+      const baseUrl = getAppBaseUrl();
+      const approveToken = createInviteEmailActionToken(data.id, "approve");
+      const denyToken = createInviteEmailActionToken(data.id, "deny");
+      const approveUrl = `${baseUrl}/api/admin/invite-requests/email-action?requestId=${encodeURIComponent(
+        data.id,
+      )}&action=approve&token=${encodeURIComponent(approveToken)}`;
+      const denyUrl = `${baseUrl}/api/admin/invite-requests/email-action?requestId=${encodeURIComponent(
+        data.id,
+      )}&action=deny&token=${encodeURIComponent(denyToken)}`;
+
       await sendInviteRequestNotification({
         requesterEmail: email,
         message,
         requestId: data.id,
         createdAt: data.created_at,
+        approveUrl,
+        denyUrl,
       });
     } catch (emailError) {
       console.error("Failed to send invite request notification email:", emailError);

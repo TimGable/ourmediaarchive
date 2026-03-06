@@ -190,6 +190,7 @@ export async function PATCH(request: Request) {
     const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
     await ensureProfile(userId, auth.email);
 
+    const supabase = createSupabaseServiceRoleClient();
     const updates: Record<string, string> = {};
 
     if (typeof payload.username === "string") {
@@ -200,6 +201,20 @@ export async function PATCH(request: Request) {
           { status: 400 },
         );
       }
+
+      const { data: existingUsername, error: existingUsernameError } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("username", username)
+        .maybeSingle();
+
+      if (existingUsernameError) {
+        return NextResponse.json({ error: existingUsernameError.message }, { status: 500 });
+      }
+      if (existingUsername?.user_id && existingUsername.user_id !== userId) {
+        return NextResponse.json({ error: "That username is already taken." }, { status: 409 });
+      }
+
       updates.username = username;
     }
 
@@ -214,8 +229,6 @@ export async function PATCH(request: Request) {
     if (typeof payload.bio === "string") {
       updates.bio = payload.bio.trim();
     }
-
-    const supabase = createSupabaseServiceRoleClient();
 
     if (Object.keys(updates).length > 0) {
       const { error: updateError } = await supabase
