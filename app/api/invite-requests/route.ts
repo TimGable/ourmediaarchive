@@ -42,6 +42,34 @@ export async function POST(request: Request) {
 
   try {
     const supabase = createSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+
+    const { data: existingPendingRequests, error: existingPendingError } = await supabase
+      .from("invite_requests")
+      .select("id")
+      .eq("email", email)
+      .eq("status", "pending");
+
+    if (existingPendingError) {
+      return NextResponse.json({ error: existingPendingError.message }, { status: 500 });
+    }
+
+    const pendingIds = (existingPendingRequests ?? []).map((requestRow) => requestRow.id);
+    if (pendingIds.length > 0) {
+      const { error: withdrawError } = await supabase
+        .from("invite_requests")
+        .update({
+          status: "withdrawn",
+          reviewed_at: nowIso,
+          review_note: "Superseded by a newer invite request from the same email.",
+        })
+        .in("id", pendingIds);
+
+      if (withdrawError) {
+        return NextResponse.json({ error: withdrawError.message }, { status: 500 });
+      }
+    }
+
     const { data, error } = await supabase
       .from("invite_requests")
       .insert({
@@ -55,6 +83,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    let notificationError: string | null = null;
     try {
       const baseUrl = getAppBaseUrl();
       const approveToken = createInviteEmailActionToken(data.id, "approve");
@@ -76,9 +105,18 @@ export async function POST(request: Request) {
       });
     } catch (emailError) {
       console.error("Failed to send invite request notification email:", emailError);
+      notificationError =
+        emailError instanceof Error ? emailError.message : "Invite notification email failed.";
     }
 
-    return NextResponse.json({ inviteRequest: data }, { status: 201 });
+    return NextResponse.json(
+      {
+        inviteRequest: data,
+        replacedPendingRequests: pendingIds.length,
+        notificationError,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unexpected server configuration error.";

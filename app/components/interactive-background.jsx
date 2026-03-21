@@ -1,27 +1,42 @@
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 
+const PARTICLE_COUNT = 24;
+
+function createSeededRandom(seed) {
+  let state = seed >>> 0;
+
+  return function nextRandom() {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function createInitialParticles() {
+  const random = createSeededRandom(1337);
+  const initParticles = [];
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    initParticles.push({
+      id: i,
+      x: random() * 100,
+      y: random() * 100,
+      size: random() * 2 + 0.5,
+      speedX: (random() - 0.5) * 0.2,
+      speedY: (random() - 0.5) * 0.2,
+      opacity: random() * 0.16 + 0.08,
+    });
+  }
+
+  return initParticles;
+}
+
 export function InteractiveBackground() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-  const [particles, setParticles] = useState(() => {
-    const initParticles = [];
-    const particleCount = 24;
-
-    for (let i = 0; i < particleCount; i++) {
-      initParticles.push({
-        id: i,
-        x: Math.random() * 100,
-        y: Math.random() * 100,
-        size: Math.random() * 2 + 0.5, // Reduced: 0.5-2.5px (was 1-5px)
-        speedX: (Math.random() - 0.5) * 0.2,
-        speedY: (Math.random() - 0.5) * 0.2,
-        opacity: Math.random() * 0.16 + 0.08, // Slight bump for better visibility
-        blur: 0, // Removed blur for performance
-      });
-    }
-
-    return initParticles;
-  });
+  const [particles, setParticles] = useState(createInitialParticles);
 
   // Mouse move handler
   useEffect(() => {

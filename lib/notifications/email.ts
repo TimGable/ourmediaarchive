@@ -12,6 +12,18 @@ export function isEmailNotificationsEnabled() {
   return hasEmailConfig();
 }
 
+async function sendEmailOrThrow(
+  resend: Resend,
+  payload: Parameters<typeof resend.emails.send>[0],
+) {
+  const result = await resend.emails.send(payload);
+  if (result.error) {
+    throw new Error(result.error.message || "Email delivery failed.");
+  }
+
+  return result.data;
+}
+
 export async function sendInviteRequestNotification(params: {
   requesterEmail: string;
   message: string;
@@ -58,7 +70,7 @@ export async function sendInviteRequestNotification(params: {
     </div>
   `;
 
-  await resend.emails.send({
+  await sendEmailOrThrow(resend, {
     from: FROM_EMAIL as string,
     to: [NOTIFY_OWNER_EMAIL as string],
     subject,
@@ -85,7 +97,7 @@ export async function sendApprovedInviteLinkEmail(params: {
     "If you did not request this, you can ignore this email.",
   ].join("\n");
 
-  await resend.emails.send({
+  await sendEmailOrThrow(resend, {
     from: FROM_EMAIL as string,
     to: [params.recipientEmail],
     subject,
@@ -113,7 +125,7 @@ export async function sendDeniedInviteEmail(params: {
     "You can submit another request in the future if your circumstances change.",
   ].join("\n");
 
-  await resend.emails.send({
+  await sendEmailOrThrow(resend, {
     from: FROM_EMAIL as string,
     to: [params.recipientEmail],
     subject,

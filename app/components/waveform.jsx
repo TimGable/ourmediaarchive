@@ -1,9 +1,20 @@
 import { motion } from "motion/react";
 
-export function Waveform({ data, isPlaying, height = 40, progress = 0 }) {
+export function Waveform({
+  data,
+  isPlaying,
+  height = 40,
+  progress = 0,
+  currentTime = 0,
+  duration = 0,
+  onSeek,
+  seekLabel,
+  disabled = false,
+}) {
   const barWidth = 2;
   const gap = 1;
   const totalWidth = data.length * (barWidth + gap);
+  const isSeekDisabled = disabled || !onSeek || !duration;
 
   return (
     <div className="relative w-full overflow-hidden" style={{ height: `${height}px` }}>
@@ -42,6 +53,20 @@ export function Waveform({ data, isPlaying, height = 40, progress = 0 }) {
           );
         })}
       </svg>
+
+      {onSeek && (
+        <input
+          type="range"
+          min="0"
+          max={duration || 0}
+          step="0.01"
+          value={currentTime}
+          onChange={(event) => onSeek(Number(event.target.value))}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          disabled={isSeekDisabled}
+          aria-label={seekLabel || "Seek track"}
+        />
+      )}
     </div>
   );
 }

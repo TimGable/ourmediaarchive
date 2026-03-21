@@ -17,12 +17,37 @@ function isGeneratedUsername(username) {
   return typeof username === "string" && /_[a-f0-9]{8}$/.test(username);
 }
 
+function createProfileQueueEntry(item, artist) {
+  return {
+    track: {
+      id: item.id,
+      title: item.title,
+      audioUrl: item.asset.url,
+    },
+    release: {
+      id: item.id,
+      title: item.title,
+      coverArt: item.coverAsset?.url || "",
+    },
+    artist: {
+      name: artist?.name || "artist",
+      username: artist?.username || "",
+    },
+  };
+}
+
 export function Dashboard({ onSignOut }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [currentView, setCurrentView] = useState('home');
   const [selectedArtist, setSelectedArtist] = useState(null);
   const [currentTrack, setCurrentTrack] = useState(null);
+  const [playbackQueue, setPlaybackQueue] = useState([]);
+  const [queueIndex, setQueueIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.7);
+  const [isMuted, setIsMuted] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -69,8 +94,177 @@ export function Dashboard({ onSignOut }) {
   };
 
   const handlePlayTrack = (track, release, artist) => {
+    setPlaybackQueue([]);
+    setQueueIndex(-1);
     setCurrentTrack({ track, release, artist });
     setIsPlaying(true);
+    setCurrentTime(0);
+    setDuration(0);
+  };
+
+  const handlePlayProfileTrack = (item, artist, queueItems) => {
+    if (!item?.asset?.url) {
+      return;
+    }
+
+    if (currentTrack?.track?.id === item.id) {
+      setIsPlaying((current) => !current);
+      return;
+    }
+
+    const queue = (queueItems || [])
+      .filter((queueItem) => queueItem?.asset?.url)
+      .map((queueItem) => createProfileQueueEntry(queueItem, artist));
+
+    const nextQueueIndex = queue.findIndex((entry) => entry.track.id === item.id);
+    if (nextQueueIndex === -1) {
+      return;
+    }
+
+    setPlaybackQueue(queue);
+    setQueueIndex(nextQueueIndex);
+    setCurrentTrack(queue[nextQueueIndex] || null);
+    setIsPlaying(true);
+    setCurrentTime(0);
+    setDuration(0);
+  };
+
+  const handleAddProfileTrackToQueue = (item, artist, queueItems) => {
+    if (!item?.asset?.url) {
+      return "invalid";
+    }
+
+    const nextEntry = createProfileQueueEntry(item, artist);
+
+    if (!currentTrack) {
+      setPlaybackQueue([nextEntry]);
+      setQueueIndex(0);
+      setCurrentTrack(nextEntry);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      return "added";
+    }
+
+    const queueSource = playbackQueue.length > 0
+      ? playbackQueue
+      : (queueItems || [])
+          .filter((queueItem) => queueItem?.asset?.url)
+          .map((queueItem) => createProfileQueueEntry(queueItem, artist));
+
+    if (queueSource.some((entry) => entry.track.id === item.id)) {
+      return "exists";
+    }
+
+    setPlaybackQueue([...queueSource, nextEntry]);
+    return "added";
+  };
+
+  const handleDeletedProfileTrack = (mediaItemId) => {
+    const removedIndex = playbackQueue.findIndex((entry) => entry.track.id === mediaItemId);
+    const nextQueue = playbackQueue.filter((entry) => entry.track.id !== mediaItemId);
+
+    setPlaybackQueue(nextQueue);
+
+    if (currentTrack?.track?.id === mediaItemId) {
+      setIsPlaying(false);
+      setCurrentTrack(null);
+      setQueueIndex(-1);
+      setCurrentTime(0);
+      setDuration(0);
+      return;
+    }
+
+    if (removedIndex !== -1 && removedIndex < queueIndex) {
+      setQueueIndex((currentIndex) => Math.max(0, currentIndex - 1));
+      return;
+    }
+
+    if (nextQueue.length === 0) {
+      setQueueIndex(-1);
+    }
+  };
+
+  const handleProfileMediaItemUpdated = (item) => {
+    if (!item?.id) {
+      return;
+    }
+
+    setPlaybackQueue((currentQueue) =>
+      currentQueue.map((entry) =>
+        entry.track.id === item.id
+          ? {
+              ...entry,
+              track: {
+                ...entry.track,
+                title: item.title,
+                audioUrl: item.asset?.url || entry.track.audioUrl,
+              },
+              release: {
+                ...entry.release,
+                title: item.title,
+                coverArt: item.coverAsset?.url || entry.release.coverArt,
+              },
+            }
+          : entry,
+      ),
+    );
+
+    setCurrentTrack((current) => {
+      if (current?.track?.id !== item.id) {
+        return current;
+      }
+
+      return {
+        ...current,
+        track: {
+          ...current.track,
+          title: item.title,
+          audioUrl: item.asset?.url || current.track.audioUrl,
+        },
+        release: {
+          ...current.release,
+          title: item.title,
+          coverArt: item.coverAsset?.url || current.release.coverArt,
+        },
+      };
+    });
+  };
+
+  const handleClosePlayer = () => {
+    setIsPlaying(false);
+    setCurrentTrack(null);
+    setPlaybackQueue([]);
+    setQueueIndex(-1);
+    setCurrentTime(0);
+    setDuration(0);
+  };
+
+  const handleSeekTrack = (time, audioElement) => {
+    setCurrentTime(time);
+    if (audioElement) {
+      audioElement.currentTime = time;
+    }
+  };
+
+  const handleVolumeChange = (nextVolume) => {
+    setVolume(nextVolume);
+    if (nextVolume > 0) {
+      setIsMuted(false);
+    }
+  };
+
+  const handleSkipTrack = (direction) => {
+    const nextIndex = queueIndex + direction;
+    if (nextIndex < 0 || nextIndex >= playbackQueue.length) {
+      return;
+    }
+
+    setQueueIndex(nextIndex);
+    setCurrentTrack(playbackQueue[nextIndex]);
+    setIsPlaying(true);
+    setCurrentTime(0);
+    setDuration(0);
   };
 
   const canLeaveProfileSetup = !forceProfileSetup;
@@ -308,6 +502,15 @@ export function Dashboard({ onSignOut }) {
                 forceSetup={forceProfileSetup}
                 onSetupComplete={() => setForceProfileSetup(false)}
                 onBack={() => setCurrentView('home')}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onPlayTrack={handlePlayProfileTrack}
+                onAddTrackToQueue={handleAddProfileTrackToQueue}
+                onTrackDeleted={handleDeletedProfileTrack}
+                onMediaItemUpdated={handleProfileMediaItemUpdated}
+                currentTime={currentTime}
+                duration={duration}
+                onSeekTrack={handleSeekTrack}
               />
             )}
 
@@ -322,6 +525,9 @@ export function Dashboard({ onSignOut }) {
                 onPlayTrack={handlePlayTrack}
                 currentTrack={currentTrack}
                 isPlaying={isPlaying}
+                currentTime={currentTime}
+                duration={duration}
+                onSeekTrack={handleSeekTrack}
               />
             )}
           </div>
@@ -332,11 +538,29 @@ export function Dashboard({ onSignOut }) {
           <GlobalAudioPlayer
             currentTrack={currentTrack}
             isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            volume={volume}
+            isMuted={isMuted}
             onPlayPause={() => setIsPlaying(!isPlaying)}
             onTrackEnd={() => {
-              // Auto-play next track logic would go here
+              if (queueIndex >= 0 && queueIndex < playbackQueue.length - 1) {
+                handleSkipTrack(1);
+                return;
+              }
               setIsPlaying(false);
+              setCurrentTime(0);
             }}
+            canSkipPrevious={queueIndex > 0}
+            canSkipNext={queueIndex >= 0 && queueIndex < playbackQueue.length - 1}
+            onSkipPrevious={() => handleSkipTrack(-1)}
+            onSkipNext={() => handleSkipTrack(1)}
+            onClose={handleClosePlayer}
+            onTimeChange={setCurrentTime}
+            onDurationChange={setDuration}
+            onSeek={handleSeekTrack}
+            onVolumeChange={handleVolumeChange}
+            onMuteToggle={() => setIsMuted((current) => !current)}
           />
         )}
       </div>

@@ -8,6 +8,7 @@ export function RequestInvite({ onBack }) {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [submitWarning, setSubmitWarning] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -16,6 +17,7 @@ export function RequestInvite({ onBack }) {
 
     setIsSubmitting(true);
     setSubmitError("");
+    setSubmitWarning("");
 
     try {
       const response = await fetch("/api/invite-requests", {
@@ -34,6 +36,11 @@ export function RequestInvite({ onBack }) {
         throw new Error(data?.error || "Failed to submit invite request.");
       }
 
+      if (data?.notificationError) {
+        setSubmitWarning(
+          `Your request was saved, but the owner notification email failed: ${data.notificationError}`,
+        );
+      }
       setIsSubmitted(true);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to submit invite request.");
@@ -76,6 +83,11 @@ export function RequestInvite({ onBack }) {
             className="mt-20"
           >
             <h1 className="text-4xl md:text-5xl mb-12 tracking-tight">request an invite</h1>
+
+            <p className="mb-8 text-sm tracking-wide text-gray-400">
+              if a previous invite request failed or never reached you, you can submit another request
+              with the same email address.
+            </p>
 
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Email Input */}
@@ -138,6 +150,10 @@ export function RequestInvite({ onBack }) {
               {submitError && (
                 <p className="text-red-400 text-sm tracking-wide">{submitError}</p>
               )}
+
+              {submitWarning && (
+                <p className="text-amber-300 text-sm tracking-wide">{submitWarning}</p>
+              )}
             </form>
           </motion.div>
         ) : (
@@ -158,8 +174,15 @@ export function RequestInvite({ onBack }) {
             
             <h2 className="text-3xl mb-4 tracking-tight">request submitted</h2>
             <p className="text-gray-400 mb-8 tracking-wide max-w-md mx-auto">
-              we'll review your request and send you login credentials via email if approved
+              we'll review your request and send you login credentials via email if approved. if you
+              had an older pending request, this one replaced it.
             </p>
+
+            {submitWarning && (
+              <p className="mb-8 text-sm tracking-wide text-amber-300 max-w-md mx-auto">
+                {submitWarning}
+              </p>
+            )}
             
             <motion.button
               onClick={onBack}

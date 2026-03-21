@@ -24,3 +24,7 @@ export function getSupabaseServiceRoleKey() {
 
   return key;
 }
+
+export function getSupabaseStorageBucket() {
+  return process.env.SUPABASE_STORAGE_BUCKET || "oma-private";
+}

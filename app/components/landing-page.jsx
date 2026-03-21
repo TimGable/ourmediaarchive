@@ -8,7 +8,7 @@ import { BrowseVideoArtists } from "./browse-video-artists";
 import { CategorySelector } from "./category-selector";
 import { InteractiveBackground } from "./interactive-background";
 
-export function LandingPage({ onSignIn }) {
+export function LandingPage({ onSignIn, onForgotPassword }) {
   const [showCategories, setShowCategories] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showSignIn, setShowSignIn] = useState(false);
@@ -21,6 +21,7 @@ export function LandingPage({ onSignIn }) {
       <SignIn 
         onBack={() => setShowSignIn(false)} 
         onSignIn={onSignIn}
+        onForgotPassword={onForgotPassword}
         onRequestInvite={() => {
           setShowSignIn(false);
           setShowRequestInvite(true);

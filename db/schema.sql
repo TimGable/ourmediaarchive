@@ -15,6 +15,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'publish_state') THEN
     CREATE TYPE publish_state AS ENUM ('draft', 'processing', 'ready', 'failed', 'archived');
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'music_release_type') THEN
+    CREATE TYPE music_release_type AS ENUM ('single', 'ep', 'album');
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'invite_request_status') THEN
     CREATE TYPE invite_request_status AS ENUM ('pending', 'approved', 'rejected', 'withdrawn');
   END IF;
@@ -23,6 +26,7 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'asset_role') THEN
     CREATE TYPE asset_role AS ENUM (
+      'avatar',
       'original',
       'stream_master',
       'stream_variant',
@@ -127,6 +131,7 @@ CREATE TABLE IF NOT EXISTS media_items (
   owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   media_kind media_type NOT NULL,
   collection_id UUID REFERENCES media_collections(id) ON DELETE SET NULL,
+  music_release_type music_release_type,
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   primary_asset_id UUID, -- FK added after media_assets exists
@@ -182,7 +187,7 @@ CREATE TABLE IF NOT EXISTS media_assets (
   CONSTRAINT height_nonnegative CHECK (height_px IS NULL OR height_px > 0),
   CONSTRAINT duration_nonnegative_asset CHECK (duration_ms IS NULL OR duration_ms >= 0),
   CONSTRAINT belongs_to_item_or_collection CHECK (
-    media_item_id IS NOT NULL OR collection_id IS NOT NULL
+    media_item_id IS NOT NULL OR collection_id IS NOT NULL OR role = 'avatar'
   ),
   UNIQUE (bucket, object_key)
 );

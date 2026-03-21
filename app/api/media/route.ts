@@ -1,0 +1,818 @@
+import { NextResponse } from "next/server";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import {
+  ensureAppUser,
+  ensureProfile,
+  getAuthContext,
+} from "@/lib/supabase/app-user";
+import { getSupabaseStorageBucket } from "@/lib/supabase/config";
+import { ensureStorageBucketExists } from "@/lib/supabase/storage";
+
+const MEDIA_KINDS = new Set(["music", "visual", "video"]);
+const MUSIC_RELEASE_TYPES = new Set(["single", "ep", "album"]);
+const VISIBILITY_LEVELS = new Set(["private", "invite_only", "public", "unlisted"]);
+const MAX_FILE_SIZE_BYTES = 250 * 1024 * 1024;
+const MAX_COVER_ART_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_TRACKS_PER_RELEASE = 15;
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
+const IMAGE_MIME_PREFIX = "image/";
+const BLOCKED_IMAGE_MIME_TYPES = new Set(["image/svg+xml"]);
+
+function sanitizeFileName(fileName: string) {
+  const normalized = fileName.trim().toLowerCase().replace(/[^a-z0-9.\-_]+/g, "-");
+  const collapsed = normalized.replace(/-+/g, "-").replace(/^-|-$/g, "");
+  return collapsed || "upload.bin";
+}
+
+function isAllowedMimeType(mediaKind: string, mimeType: string) {
+  if (mediaKind === "music") {
+    return mimeType.startsWith("audio/");
+  }
+
+  if (mediaKind === "visual") {
+    return mimeType.startsWith("image/");
+  }
+
+  if (mediaKind === "video") {
+    return mimeType.startsWith("video/");
+  }
+
+  return false;
+}
+
+function buildObjectKey(params: {
+  userId: string;
+  mediaItemId: string;
+  assetId: string;
+  fileName: string;
+  variant?: string;
+}) {
+  return `u/${params.userId}/m/${params.mediaItemId}/a/${params.assetId}/v1/${params.variant || "original"}/${params.fileName}`;
+}
+
+function isAllowedCoverArtMimeType(mimeType: string) {
+  return mimeType.startsWith(IMAGE_MIME_PREFIX) && !BLOCKED_IMAGE_MIME_TYPES.has(mimeType);
+}
+
+function fileNameToTitle(fileName: string) {
+  return fileName
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatReleaseType(value: string) {
+  if (value === "ep") {
+    return "EP";
+  }
+
+  if (value === "album") {
+    return "Album";
+  }
+
+  return "Single";
+}
+
+function buildMultiTrackDescription(
+  releaseTitle: string,
+  releaseType: string,
+  description: string,
+) {
+  const releaseLabel = formatReleaseType(releaseType);
+  if (!description) {
+    return `From ${releaseLabel} "${releaseTitle}".`;
+  }
+
+  return `From ${releaseLabel} "${releaseTitle}". ${description}`;
+}
+
+async function createSignedAssetPayload(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  asset: {
+    id: string;
+    bucket: string;
+    object_key: string;
+    file_name: string | null;
+    mime_type: string;
+    file_size_bytes: number;
+  },
+) {
+  let assetUrl: string | null = null;
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from(asset.bucket)
+    .createSignedUrl(asset.object_key, SIGNED_URL_TTL_SECONDS);
+
+  if (!signedError) {
+    assetUrl = signedData?.signedUrl ?? null;
+  }
+
+  return {
+    id: asset.id,
+    fileName: asset.file_name,
+    mimeType: asset.mime_type,
+    fileSizeBytes: asset.file_size_bytes,
+    url: assetUrl,
+  };
+}
+
+async function buildMediaItemResponse(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  item: {
+    id: string;
+    media_kind: string;
+    music_release_type: string | null;
+    title: string;
+    description: string;
+    visibility: string;
+    state: string;
+    created_at: string;
+    published_at: string | null;
+    duration_ms: number | null;
+    primary_asset_id: string | null;
+  },
+) {
+  const { data: assets, error: assetsError } = await supabase
+    .from("media_assets")
+    .select("id, media_item_id, role, bucket, object_key, file_name, mime_type, file_size_bytes")
+    .eq("media_item_id", item.id)
+    .in("role", ["original", "thumbnail"]);
+
+  if (assetsError) {
+    throw new Error(assetsError.message);
+  }
+
+  let primaryAsset = null;
+  let coverAsset = null;
+
+  for (const asset of assets ?? []) {
+    const signedAsset = await createSignedAssetPayload(supabase, asset);
+    if (asset.id === item.primary_asset_id) {
+      primaryAsset = signedAsset;
+    }
+    if (asset.role === "thumbnail") {
+      coverAsset = signedAsset;
+    }
+  }
+
+  return {
+    id: item.id,
+    mediaKind: item.media_kind,
+    releaseType: item.music_release_type,
+    title: item.title,
+    description: item.description,
+    visibility: item.visibility,
+    state: item.state,
+    createdAt: item.created_at,
+    publishedAt: item.published_at,
+    durationMs: item.duration_ms,
+    asset: primaryAsset,
+    coverAsset,
+  };
+}
+
+async function createMusicUploadRecord(params: {
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>;
+  bucket: string;
+  userId: string;
+  mediaKind: string;
+  releaseType: string | null;
+  title: string;
+  description: string;
+  visibility: string;
+  file: File;
+  coverArt: File | null;
+  trackNumber?: number | null;
+}) {
+  const {
+    supabase,
+    bucket,
+    userId,
+    mediaKind,
+    releaseType,
+    title,
+    description,
+    visibility,
+    file,
+    coverArt,
+    trackNumber,
+  } = params;
+
+  const mediaItemId = crypto.randomUUID();
+  const assetId = crypto.randomUUID();
+  const safeFileName = sanitizeFileName(file.name || "upload.bin");
+  const objectKey = buildObjectKey({
+    userId,
+    mediaItemId,
+    assetId,
+    fileName: safeFileName,
+  });
+  const uploadedObjectKeys = [objectKey];
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+  const { error: uploadError } = await supabase.storage.from(bucket).upload(objectKey, fileBuffer, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+
+  if (uploadError) {
+    throw new Error(`Failed to upload file to storage: ${uploadError.message}`);
+  }
+
+  const publishedAt = visibility === "private" ? null : new Date().toISOString();
+
+  const { error: itemInsertError } = await supabase.from("media_items").insert({
+    id: mediaItemId,
+    owner_user_id: userId,
+    media_kind: mediaKind,
+    music_release_type: mediaKind === "music" ? releaseType : null,
+    title,
+    description,
+    visibility,
+    state: "ready",
+    published_at: publishedAt,
+  });
+
+  if (itemInsertError) {
+    await supabase.storage.from(bucket).remove(uploadedObjectKeys);
+    throw new Error(itemInsertError.message);
+  }
+
+  const { error: assetInsertError } = await supabase.from("media_assets").insert({
+    id: assetId,
+    media_item_id: mediaItemId,
+    owner_user_id: userId,
+    role: "original",
+    storage_provider: "supabase",
+    bucket,
+    object_key: objectKey,
+    file_name: safeFileName,
+    mime_type: file.type || "application/octet-stream",
+    file_size_bytes: file.size,
+  });
+
+  if (assetInsertError) {
+    await supabase.from("media_items").delete().eq("id", mediaItemId);
+    await supabase.storage.from(bucket).remove(uploadedObjectKeys);
+    throw new Error(assetInsertError.message);
+  }
+
+  const { error: itemUpdateError } = await supabase
+    .from("media_items")
+    .update({ primary_asset_id: assetId })
+    .eq("id", mediaItemId);
+
+  if (itemUpdateError) {
+    await supabase.from("media_assets").delete().eq("id", assetId);
+    await supabase.from("media_items").delete().eq("id", mediaItemId);
+    await supabase.storage.from(bucket).remove(uploadedObjectKeys);
+    throw new Error(itemUpdateError.message);
+  }
+
+  if (mediaKind === "music" && trackNumber) {
+    const { error: trackDetailsError } = await supabase.from("music_track_details").insert({
+      media_item_id: mediaItemId,
+      release_track_number: trackNumber,
+    });
+
+    if (trackDetailsError) {
+      await supabase.from("media_assets").delete().eq("id", assetId);
+      await supabase.from("media_items").delete().eq("id", mediaItemId);
+      await supabase.storage.from(bucket).remove(uploadedObjectKeys);
+      throw new Error(trackDetailsError.message);
+    }
+  }
+
+  if (coverArt instanceof File) {
+    const coverAssetId = crypto.randomUUID();
+    const coverFileName = sanitizeFileName(coverArt.name || "cover-art.bin");
+    const coverObjectKey = buildObjectKey({
+      userId,
+      mediaItemId,
+      assetId: coverAssetId,
+      fileName: coverFileName,
+      variant: "thumbnail",
+    });
+    const coverBuffer = Buffer.from(await coverArt.arrayBuffer());
+
+    const { error: coverUploadError } = await supabase.storage.from(bucket).upload(coverObjectKey, coverBuffer, {
+      contentType: coverArt.type || "application/octet-stream",
+      upsert: false,
+    });
+
+    if (coverUploadError) {
+      await supabase.from("media_assets").delete().eq("id", assetId);
+      await supabase.from("media_items").delete().eq("id", mediaItemId);
+      await supabase.storage.from(bucket).remove(uploadedObjectKeys);
+      throw new Error(`Failed to upload cover art to storage: ${coverUploadError.message}`);
+    }
+
+    uploadedObjectKeys.push(coverObjectKey);
+
+    const { error: coverInsertError } = await supabase.from("media_assets").insert({
+      id: coverAssetId,
+      media_item_id: mediaItemId,
+      owner_user_id: userId,
+      role: "thumbnail",
+      storage_provider: "supabase",
+      bucket,
+      object_key: coverObjectKey,
+      file_name: coverFileName,
+      mime_type: coverArt.type || "application/octet-stream",
+      file_size_bytes: coverArt.size,
+    });
+
+    if (coverInsertError) {
+      await supabase.from("media_assets").delete().eq("id", assetId);
+      await supabase.from("media_items").delete().eq("id", mediaItemId);
+      await supabase.storage.from(bucket).remove(uploadedObjectKeys);
+      throw new Error(coverInsertError.message);
+    }
+  }
+
+  const item = await buildMediaItemResponse(supabase, {
+    id: mediaItemId,
+    media_kind: mediaKind,
+    music_release_type: mediaKind === "music" ? releaseType : null,
+    title,
+    description,
+    visibility,
+    state: "ready",
+    created_at: new Date().toISOString(),
+    published_at: publishedAt,
+    duration_ms: null,
+    primary_asset_id: assetId,
+  });
+
+  return {
+    item,
+    mediaItemId,
+    uploadedObjectKeys,
+  };
+}
+
+export async function GET(request: Request) {
+  try {
+    const auth = await getAuthContext(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { userId } = await ensureAppUser(auth.authUserId, auth.email);
+    await ensureProfile(userId, auth.email);
+
+    const supabase = createSupabaseServiceRoleClient();
+    const { data: mediaItems, error: itemsError } = await supabase
+      .from("media_items")
+      .select(
+        "id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
+      )
+      .eq("owner_user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (itemsError) {
+      return NextResponse.json({ error: itemsError.message }, { status: 500 });
+    }
+
+    const items = mediaItems ?? [];
+    const itemIds = items.map((item) => item.id);
+
+    const primaryAssetsById = new Map<string, Record<string, unknown>>();
+    const coverAssetsByItemId = new Map<string, Record<string, unknown>>();
+
+    if (itemIds.length > 0) {
+      const { data: assets, error: assetsError } = await supabase
+        .from("media_assets")
+        .select("id, media_item_id, role, bucket, object_key, file_name, mime_type, file_size_bytes")
+        .in("media_item_id", itemIds)
+        .in("role", ["original", "thumbnail"]);
+
+      if (assetsError) {
+        return NextResponse.json({ error: assetsError.message }, { status: 500 });
+      }
+
+      for (const asset of assets ?? []) {
+        const signedAsset = await createSignedAssetPayload(supabase, asset);
+
+        if (asset.role === "original") {
+          primaryAssetsById.set(asset.id, signedAsset);
+        }
+
+        if (asset.role === "thumbnail" && asset.media_item_id) {
+          coverAssetsByItemId.set(asset.media_item_id, signedAsset);
+        }
+      }
+    }
+
+    return NextResponse.json({
+      items: items.map((item) => ({
+        id: item.id,
+        mediaKind: item.media_kind,
+        releaseType: item.music_release_type,
+        title: item.title,
+        description: item.description,
+        visibility: item.visibility,
+        state: item.state,
+        createdAt: item.created_at,
+        publishedAt: item.published_at,
+        durationMs: item.duration_ms,
+        asset: item.primary_asset_id ? primaryAssetsById.get(item.primary_asset_id) ?? null : null,
+        coverAsset: coverAssetsByItemId.get(item.id) ?? null,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  let formData: FormData;
+
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Invalid multipart form data." }, { status: 400 });
+  }
+
+  try {
+    const auth = await getAuthContext(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { userId } = await ensureAppUser(auth.authUserId, auth.email);
+    await ensureProfile(userId, auth.email);
+
+    const mediaKind = String(formData.get("mediaKind") || "").trim().toLowerCase();
+    const title = String(formData.get("title") || "").trim();
+    const description = String(formData.get("description") || "").trim();
+    const releaseType = String(formData.get("releaseType") || "")
+      .trim()
+      .toLowerCase();
+    const visibility = String(formData.get("visibility") || "invite_only")
+      .trim()
+      .toLowerCase();
+    const singleFile = formData.get("file");
+    const uploadedFiles = formData.getAll("file").filter((value): value is File => value instanceof File);
+    const trackTitles = formData
+      .getAll("trackTitle")
+      .map((value) => String(value || "").trim());
+    const coverArt = formData.get("coverArt");
+
+    if (!MEDIA_KINDS.has(mediaKind)) {
+      return NextResponse.json({ error: "Invalid media kind." }, { status: 400 });
+    }
+
+    if (!title || title.length > 160) {
+      return NextResponse.json(
+        { error: "Title is required and must be 160 characters or fewer." },
+        { status: 400 },
+      );
+    }
+
+    if (description.length > 4000) {
+      return NextResponse.json(
+        { error: "Description must be 4000 characters or fewer." },
+        { status: 400 },
+      );
+    }
+
+    if (!VISIBILITY_LEVELS.has(visibility)) {
+      return NextResponse.json({ error: "Invalid visibility level." }, { status: 400 });
+    }
+
+    if (mediaKind === "music" && !MUSIC_RELEASE_TYPES.has(releaseType)) {
+      return NextResponse.json(
+        { error: "Music uploads must specify single, EP, or album." },
+        { status: 400 },
+      );
+    }
+
+    const files =
+      mediaKind === "music" && releaseType !== "single"
+        ? uploadedFiles
+        : singleFile instanceof File
+          ? [singleFile]
+          : uploadedFiles.slice(0, 1);
+
+    if (files.length === 0) {
+      return NextResponse.json({ error: "A file is required." }, { status: 400 });
+    }
+
+    if (mediaKind !== "music" && files.length > 1) {
+      return NextResponse.json({ error: "Only one file can be uploaded for this media type." }, { status: 400 });
+    }
+
+    if (mediaKind === "music" && releaseType === "single" && files.length > 1) {
+      return NextResponse.json({ error: "Singles can only contain one track." }, { status: 400 });
+    }
+
+    if (mediaKind === "music" && releaseType !== "single" && files.length > MAX_TRACKS_PER_RELEASE) {
+      return NextResponse.json(
+        { error: `EP and album uploads are limited to ${MAX_TRACKS_PER_RELEASE} tracks.` },
+        { status: 400 },
+      );
+    }
+
+    for (const file of files) {
+      if (file.size <= 0) {
+        return NextResponse.json({ error: "One of the selected files is empty." }, { status: 400 });
+      }
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        return NextResponse.json(
+          { error: "Files must be 250 MB or smaller for this first upload implementation." },
+          { status: 400 },
+        );
+      }
+
+      if (!isAllowedMimeType(mediaKind, file.type || "")) {
+        return NextResponse.json(
+          { error: `One of the selected file types does not match the ${mediaKind} category.` },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (coverArt instanceof File) {
+      if (mediaKind !== "music") {
+        return NextResponse.json(
+          { error: "Cover art is only supported for music uploads." },
+          { status: 400 },
+        );
+      }
+
+      if (coverArt.size <= 0) {
+        return NextResponse.json({ error: "The selected cover art file is empty." }, { status: 400 });
+      }
+
+      if (coverArt.size > MAX_COVER_ART_SIZE_BYTES) {
+        return NextResponse.json(
+          { error: "Cover art images must be 10 MB or smaller." },
+          { status: 400 },
+        );
+      }
+
+      if (!isAllowedCoverArtMimeType(coverArt.type || "")) {
+        return NextResponse.json(
+          { error: "Cover art must be a standard image format such as JPG, PNG, WEBP, GIF, or AVIF." },
+          { status: 400 },
+        );
+      }
+    }
+
+    const bucket = getSupabaseStorageBucket();
+    await ensureStorageBucketExists(bucket);
+    const supabase = createSupabaseServiceRoleClient();
+    if (mediaKind === "music" && releaseType !== "single") {
+      if (trackTitles.length !== files.length) {
+        return NextResponse.json({ error: "Every uploaded track needs a title." }, { status: 400 });
+      }
+
+      if (trackTitles.some((trackTitle) => !trackTitle)) {
+        return NextResponse.json({ error: "Every uploaded track needs a title." }, { status: 400 });
+      }
+    }
+
+    const createdMediaItemIds: string[] = [];
+    const uploadedObjectKeysByBucket = new Map<string, string[]>();
+
+    try {
+      const items = [];
+
+      for (const [index, file] of files.entries()) {
+        const trackTitle =
+          mediaKind === "music"
+            ? releaseType === "single"
+              ? title
+              : trackTitles[index] || fileNameToTitle(file.name || `track-${index + 1}`)
+            : title;
+        const itemDescription =
+          mediaKind === "music" && releaseType !== "single"
+            ? buildMultiTrackDescription(title, releaseType, description)
+            : description;
+
+        const created = await createMusicUploadRecord({
+          supabase,
+          bucket,
+          userId,
+          mediaKind,
+          releaseType: mediaKind === "music" ? releaseType : null,
+          title: trackTitle,
+          description: itemDescription,
+          visibility,
+          file,
+          coverArt: coverArt instanceof File ? coverArt : null,
+          trackNumber: mediaKind === "music" && releaseType !== "single" ? index + 1 : null,
+        });
+
+        createdMediaItemIds.push(created.mediaItemId);
+        uploadedObjectKeysByBucket.set(bucket, [
+          ...(uploadedObjectKeysByBucket.get(bucket) || []),
+          ...created.uploadedObjectKeys,
+        ]);
+        items.push(created.item);
+      }
+
+      return NextResponse.json(
+        mediaKind === "music" && releaseType !== "single"
+          ? { items }
+          : { item: items[0] },
+        { status: 201 },
+      );
+    } catch (creationError) {
+      for (const mediaItemId of createdMediaItemIds) {
+        await supabase.from("media_items").delete().eq("id", mediaItemId);
+      }
+
+      for (const [bucketName, objectKeys] of uploadedObjectKeysByBucket.entries()) {
+        if (objectKeys.length > 0) {
+          await supabase.storage.from(bucketName).remove(objectKeys);
+        }
+      }
+
+      const message =
+        creationError instanceof Error ? creationError.message : "Unexpected server error.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  let payload: {
+    id?: string;
+    title?: string;
+    description?: string;
+    visibility?: string;
+  };
+
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
+  }
+
+  try {
+    const auth = await getAuthContext(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { userId } = await ensureAppUser(auth.authUserId, auth.email);
+    await ensureProfile(userId, auth.email);
+
+    const mediaItemId = String(payload?.id || "").trim();
+    const title = String(payload?.title || "").trim();
+    const description = typeof payload?.description === "string" ? payload.description.trim() : "";
+    const visibility = String(payload?.visibility || "").trim().toLowerCase();
+
+    if (!mediaItemId) {
+      return NextResponse.json({ error: "A media item id is required." }, { status: 400 });
+    }
+
+    if (!title || title.length > 160) {
+      return NextResponse.json(
+        { error: "Title is required and must be 160 characters or fewer." },
+        { status: 400 },
+      );
+    }
+
+    if (description.length > 4000) {
+      return NextResponse.json(
+        { error: "Description must be 4000 characters or fewer." },
+        { status: 400 },
+      );
+    }
+
+    if (!VISIBILITY_LEVELS.has(visibility)) {
+      return NextResponse.json({ error: "Invalid visibility level." }, { status: 400 });
+    }
+
+    const supabase = createSupabaseServiceRoleClient();
+    const { data: existingItem, error: existingItemError } = await supabase
+      .from("media_items")
+      .select(
+        "id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
+      )
+      .eq("id", mediaItemId)
+      .eq("owner_user_id", userId)
+      .maybeSingle();
+
+    if (existingItemError) {
+      return NextResponse.json({ error: existingItemError.message }, { status: 500 });
+    }
+
+    if (!existingItem) {
+      return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+    }
+
+    const publishedAt = visibility === "private" ? null : existingItem.published_at || new Date().toISOString();
+
+    const { error: updateError } = await supabase
+      .from("media_items")
+      .update({
+        title,
+        description,
+        visibility,
+        published_at: publishedAt,
+      })
+      .eq("id", mediaItemId)
+      .eq("owner_user_id", userId);
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    const { data: updatedItem, error: updatedItemError } = await supabase
+      .from("media_items")
+      .select(
+        "id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
+      )
+      .eq("id", mediaItemId)
+      .eq("owner_user_id", userId)
+      .single();
+
+    if (updatedItemError) {
+      return NextResponse.json({ error: updatedItemError.message }, { status: 500 });
+    }
+
+    const item = await buildMediaItemResponse(supabase, updatedItem);
+    return NextResponse.json({ item });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const auth = await getAuthContext(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { userId } = await ensureAppUser(auth.authUserId, auth.email);
+    await ensureProfile(userId, auth.email);
+
+    const { searchParams } = new URL(request.url);
+    const mediaItemId = searchParams.get("id")?.trim();
+
+    if (!mediaItemId) {
+      return NextResponse.json({ error: "A media item id is required." }, { status: 400 });
+    }
+
+    const supabase = createSupabaseServiceRoleClient();
+    const { data: mediaItem, error: mediaItemError } = await supabase
+      .from("media_items")
+      .select("id")
+      .eq("id", mediaItemId)
+      .eq("owner_user_id", userId)
+      .maybeSingle();
+
+    if (mediaItemError) {
+      return NextResponse.json({ error: mediaItemError.message }, { status: 500 });
+    }
+
+    if (!mediaItem) {
+      return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+    }
+
+    const { data: assets, error: assetsError } = await supabase
+      .from("media_assets")
+      .select("id, bucket, object_key")
+      .eq("media_item_id", mediaItemId);
+
+    if (assetsError) {
+      return NextResponse.json({ error: assetsError.message }, { status: 500 });
+    }
+
+    const bucketsToObjectKeys = new Map<string, string[]>();
+    for (const asset of assets ?? []) {
+      if (!bucketsToObjectKeys.has(asset.bucket)) {
+        bucketsToObjectKeys.set(asset.bucket, []);
+      }
+      bucketsToObjectKeys.get(asset.bucket)?.push(asset.object_key);
+    }
+
+    for (const [bucket, objectKeys] of bucketsToObjectKeys.entries()) {
+      if (objectKeys.length > 0) {
+        await supabase.storage.from(bucket).remove(objectKeys);
+      }
+    }
+
+    const { error: deleteError } = await supabase.from("media_items").delete().eq("id", mediaItemId);
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ deleted: true, id: mediaItemId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

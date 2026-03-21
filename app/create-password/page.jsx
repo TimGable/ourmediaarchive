@@ -45,6 +45,20 @@ export default function CreatePasswordPage() {
   useEffect(() => {
     let mounted = true;
 
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        if (session) {
+          setSessionReady(true);
+          setError("");
+          setIsLoading(false);
+        }
+      }
+    });
+
     async function initializeSessionFromInviteLink() {
       setIsLoading(true);
       setError("");
@@ -56,46 +70,59 @@ export default function CreatePasswordPage() {
       const tokenHash = searchParams.get("token_hash");
       const type = searchParams.get("type");
       const code = searchParams.get("code");
+      let sessionFromLink = null;
 
       if (tokenHash && type) {
-        const { error: verifyError } = await supabase.auth.verifyOtp({
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
           type,
         });
 
         if (verifyError) {
           if (mounted) {
-            setError("This invite link is invalid or expired. Request a new invite.");
+            setError("This password setup or recovery link is invalid or expired. Request a new one.");
             setSessionReady(false);
           }
           setIsLoading(false);
           return;
         }
+        sessionFromLink = data?.session ?? null;
       } else if (code) {
-        const { error: codeExchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        const { data, error: codeExchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
         if (codeExchangeError) {
           if (mounted) {
-            setError("This invite link is invalid or expired. Request a new invite.");
+            setError("This password setup or recovery link is invalid or expired. Request a new one.");
             setSessionReady(false);
           }
           setIsLoading(false);
           return;
         }
+        sessionFromLink = data?.session ?? null;
       } else if (accessToken && refreshToken) {
-        const { error: sessionError } = await supabase.auth.setSession({
+        const { data, error: sessionError } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
 
         if (sessionError) {
           if (mounted) {
-            setError("This invite link is invalid or expired. Request a new invite.");
+            setError("This password setup or recovery link is invalid or expired. Request a new one.");
             setSessionReady(false);
           }
           setIsLoading(false);
           return;
         }
+        sessionFromLink = data?.session ?? null;
+      }
+
+      if (!mounted) return;
+
+      if (sessionFromLink) {
+        setSessionReady(true);
+        setError("");
+        setIsLoading(false);
+        return;
       }
 
       const {
@@ -105,7 +132,7 @@ export default function CreatePasswordPage() {
       if (!mounted) return;
 
       if (!session) {
-        setError("No active invite session found. Open the link from your invite email.");
+        setError("No active recovery session found. Open the link from your email.");
         setSessionReady(false);
       } else {
         setSessionReady(true);
@@ -116,6 +143,7 @@ export default function CreatePasswordPage() {
     initializeSessionFromInviteLink();
     return () => {
       mounted = false;
+      subscription.unsubscribe();
     };
   }, [supabase]);
 
@@ -175,11 +203,11 @@ export default function CreatePasswordPage() {
             </div>
             <h1 className="text-3xl mb-2">create password</h1>
             <p className="text-gray-400 text-sm">
-              set your password to get started
+              set a new password to continue
             </p>
           </motion.div>
 
-          {isLoading && <p className="text-gray-400 text-sm">validating invite link...</p>}
+          {isLoading && <p className="text-gray-400 text-sm">validating recovery link...</p>}
 
           {!isLoading && !sessionReady && error && (
             <div className="border border-red-400/40 bg-red-400/10 px-4 py-3 text-sm text-red-400">

@@ -2,11 +2,14 @@ import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { InteractiveBackground } from "./interactive-background";
 
-export function SignIn({ onBack, onSignIn, onRequestInvite }) {
+export function SignIn({ onBack, onSignIn, onForgotPassword, onRequestInvite }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [showForgotPasswordForm, setShowForgotPasswordForm] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [forgotPasswordNotice, setForgotPasswordNotice] = useState({ type: "", message: "" });
   const [isShaking, setIsShaking] = useState(false);
 
   useEffect(() => {
@@ -18,6 +21,7 @@ export function SignIn({ onBack, onSignIn, onRequestInvite }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
+    setForgotPasswordNotice({ type: "", message: "" });
     setIsSubmitting(true);
     try {
       const result = await onSignIn(email, password);
@@ -30,6 +34,35 @@ export function SignIn({ onBack, onSignIn, onRequestInvite }) {
       setIsShaking(true);
     }
     setIsSubmitting(false);
+  };
+
+  const handleForgotPassword = async () => {
+    setAuthError("");
+    setForgotPasswordNotice({ type: "", message: "" });
+    setIsResettingPassword(true);
+
+    try {
+      const result = await onForgotPassword?.(email);
+      if (!result?.success) {
+        setForgotPasswordNotice({
+          type: "error",
+          message: result?.error || "Failed to send password reset email.",
+        });
+      } else {
+        setForgotPasswordNotice({
+          type: "success",
+          message:
+            result?.message || "Password reset email sent. Check your inbox and spam folder.",
+        });
+      }
+    } catch {
+      setForgotPasswordNotice({
+        type: "error",
+        message: "Failed to send password reset email.",
+      });
+    }
+
+    setIsResettingPassword(false);
   };
 
   return (
@@ -99,6 +132,9 @@ export function SignIn({ onBack, onSignIn, onRequestInvite }) {
                       setAuthError("");
                       setIsShaking(false);
                     }
+                    if (forgotPasswordNotice.message) {
+                      setForgotPasswordNotice({ type: "", message: "" });
+                    }
                   }}
                   className="w-full bg-transparent border border-white/20 px-4 py-3 md:py-4 text-white focus:border-white/60 focus:outline-none transition-all duration-300 hover:border-white/40 text-base"
                   placeholder="you@example.com"
@@ -154,6 +190,19 @@ export function SignIn({ onBack, onSignIn, onRequestInvite }) {
                 </p>
               )}
 
+              {forgotPasswordNotice.message && (
+                <p
+                  role="status"
+                  className={`text-sm tracking-wide border px-3 py-2 ${
+                    forgotPasswordNotice.type === "error"
+                      ? "border-red-500/40 bg-red-500/10 text-red-400"
+                      : "border-green-500/40 bg-green-500/10 text-green-400"
+                  }`}
+                >
+                  {forgotPasswordNotice.message}
+                </p>
+              )}
+
               <motion.div
                 className="text-center pt-4 space-y-3"
                 initial={{ opacity: 0 }}
@@ -162,8 +211,12 @@ export function SignIn({ onBack, onSignIn, onRequestInvite }) {
               >
                 <button
                   type="button"
+                  onClick={() => {
+                    setShowForgotPasswordForm((current) => !current);
+                    setForgotPasswordNotice({ type: "", message: "" });
+                  }}
                   className="text-sm text-gray-400 hover:text-white transition-colors relative group touch-manipulation"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isResettingPassword}
                 >
                   forgot password?
                   <motion.div
@@ -174,12 +227,33 @@ export function SignIn({ onBack, onSignIn, onRequestInvite }) {
                   />
                 </button>
 
+                {showForgotPasswordForm && (
+                  <motion.div
+                    className="border border-white/15 bg-white/5 p-4 text-left"
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <p className="mb-3 text-xs text-gray-400">
+                      Enter your account email and we&apos;ll send you a password reset link.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={isSubmitting || isResettingPassword}
+                      className="w-full border border-white/30 px-4 py-3 text-sm transition-all duration-300 hover:border-white/60 hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {isResettingPassword ? "sending reset email..." : "send reset email"}
+                    </button>
+                  </motion.div>
+                )}
+
                 <div className="pt-2">
                   <button
                     type="button"
                     onClick={onRequestInvite}
                     className="text-sm text-gray-400 hover:text-white transition-colors relative group touch-manipulation"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isResettingPassword}
                   >
                     don&apos;t have an account? request an invite
                     <motion.div

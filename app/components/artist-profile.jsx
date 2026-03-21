@@ -1,17 +1,98 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, Play, Pause, ChevronDown, ChevronUp, ChevronRight } from "lucide-react";
 import { Waveform } from "./waveform";
+import { ImageWithFallback } from "./figma/ImageWithFallback.tsx";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export function ArtistProfile({ artist, onBack, onPlayTrack, currentTrack, isPlaying }) {
+export function ArtistProfile({
+  artist,
+  onBack,
+  onPlayTrack,
+  currentTrack,
+  isPlaying,
+  currentTime,
+  duration,
+  onSeekTrack,
+}) {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [expandedRelease, setExpandedRelease] = useState(null);
   const [isFollowing, setIsFollowing] = useState(artist.isFollowing || false);
   const [followerCount, setFollowerCount] = useState(artist.followerCount || 0);
+  const [followingCount, setFollowingCount] = useState(artist.followingCount || 0);
+  const [isUpdatingFollow, setIsUpdatingFollow] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadFollowState() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        return;
+      }
+
+      const response = await fetch(`/api/follows/${artist.id}`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      if (!response.ok || !mounted) {
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      if (!mounted) {
+        return;
+      }
+
+      setIsFollowing(Boolean(payload?.isFollowing));
+      setFollowerCount(Number(payload?.followerCount || 0));
+      setFollowingCount(Number(payload?.followingCount || 0));
+    }
+
+    loadFollowState();
+    return () => {
+      mounted = false;
+    };
+  }, [artist.id, supabase]);
 
   const handleFollowToggle = () => {
-    // TODO: Call Supabase to update follow status
-    setIsFollowing(!isFollowing);
-    setFollowerCount(isFollowing ? followerCount - 1 : followerCount + 1);
+    async function toggleFollow() {
+      setIsUpdatingFollow(true);
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session?.access_token) {
+          return;
+        }
+
+        const response = await fetch(`/api/follows/${artist.id}`, {
+          method: isFollowing ? "DELETE" : "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        setIsFollowing(Boolean(payload?.isFollowing));
+        setFollowerCount(Number(payload?.followerCount || 0));
+        setFollowingCount(Number(payload?.followingCount || 0));
+      } finally {
+        setIsUpdatingFollow(false);
+      }
+    }
+
+    toggleFollow();
   };
 
   const isTrackPlaying = (trackId) => {
@@ -20,6 +101,14 @@ export function ArtistProfile({ artist, onBack, onPlayTrack, currentTrack, isPla
 
   const handleTrackClick = (track, release) => {
     onPlayTrack(track, release, artist);
+  };
+
+  const handleTrackSeek = (trackId, nextTime) => {
+    if (currentTrack?.track?.id !== trackId || !onSeekTrack) {
+      return;
+    }
+
+    onSeekTrack(nextTime);
   };
 
   return (
@@ -53,7 +142,7 @@ export function ArtistProfile({ artist, onBack, onPlayTrack, currentTrack, isPla
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.2, duration: 0.5 }}
         >
-          <img
+          <ImageWithFallback
             src={artist.avatar}
             alt={artist.name}
             className="w-full h-full object-cover"
@@ -75,9 +164,9 @@ export function ArtistProfile({ artist, onBack, onPlayTrack, currentTrack, isPla
                 <span>
                   <span className="text-white font-medium">{followerCount}</span> followers
                 </span>
-                {artist.followingCount !== undefined && (
+                {followingCount !== undefined && (
                   <span>
-                    <span className="text-white font-medium">{artist.followingCount}</span> following
+                    <span className="text-white font-medium">{followingCount}</span> following
                   </span>
                 )}
               </div>
@@ -91,11 +180,12 @@ export function ArtistProfile({ artist, onBack, onPlayTrack, currentTrack, isPla
                   ? 'border-white/40 bg-white text-black hover:bg-white/90'
                   : 'border-white/40 bg-transparent hover:border-white/60 hover:bg-white/5'
               }`}
+              disabled={isUpdatingFollow}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
               <span className="text-sm md:text-base tracking-wide">
-                {isFollowing ? 'following' : 'follow'}
+                {isFollowing ? 'unfollow' : 'follow'}
               </span>
             </motion.button>
           </div>
@@ -122,7 +212,7 @@ export function ArtistProfile({ artist, onBack, onPlayTrack, currentTrack, isPla
               >
                 {/* Cover Art */}
                 <div className="relative aspect-square overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900">
-                  <img
+                  <ImageWithFallback
                     src={release.coverArt}
                     alt={release.title}
                     className="w-full h-full object-cover"
@@ -194,6 +284,20 @@ export function ArtistProfile({ artist, onBack, onPlayTrack, currentTrack, isPla
                                     data={track.waveformData}
                                     isPlaying={isTrackPlaying(track.id)}
                                     height={30}
+                                    progress={
+                                      currentTrack?.track?.id === track.id && duration > 0
+                                        ? currentTime / duration
+                                        : 0
+                                    }
+                                    currentTime={currentTrack?.track?.id === track.id ? currentTime : 0}
+                                    duration={currentTrack?.track?.id === track.id ? duration : 0}
+                                    onSeek={
+                                      currentTrack?.track?.id === track.id
+                                        ? (nextTime) => handleTrackSeek(track.id, nextTime)
+                                        : undefined
+                                    }
+                                    seekLabel={`Seek ${track.title}`}
+                                    disabled={currentTrack?.track?.id !== track.id}
                                   />
                                 </div>
                               </div>
