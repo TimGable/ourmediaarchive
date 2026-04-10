@@ -8,6 +8,7 @@ import {
 import { getSupabaseStorageBucket } from "@/lib/supabase/config";
 import { ensureStorageBucketExists } from "@/lib/supabase/storage";
 import { getMediaSocialSummary } from "@/lib/media-social";
+import { createMentionNotifications } from "@/lib/mentions";
 
 const MEDIA_KINDS = new Set(["music", "visual", "video"]);
 const MUSIC_RELEASE_TYPES = new Set(["single", "ep", "album"]);
@@ -15,7 +16,6 @@ const VISIBILITY_LEVELS = new Set(["private", "invite_only", "public", "unlisted
 const MAX_STANDARD_FILE_SIZE_BYTES = 250 * 1024 * 1024;
 const MAX_VIDEO_FILE_SIZE_BYTES = 1024 * 1024 * 1024;
 const MAX_COVER_ART_SIZE_BYTES = 10 * 1024 * 1024;
-const MAX_TRACKS_PER_RELEASE = 15;
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const IMAGE_MIME_PREFIX = "image/";
 const BLOCKED_IMAGE_MIME_TYPES = new Set(["image/svg+xml"]);
@@ -131,6 +131,7 @@ async function buildMediaItemResponse(
   item: {
     id: string;
     media_kind: string;
+    collection_id?: string | null;
     music_release_type: string | null;
     title: string;
     description: string;
@@ -140,6 +141,7 @@ async function buildMediaItemResponse(
     published_at: string | null;
     duration_ms: number | null;
     primary_asset_id: string | null;
+    trackNumber?: number | null;
   },
 ) {
   const { data: assets, error: assetsError } = await supabase
@@ -168,6 +170,7 @@ async function buildMediaItemResponse(
   return {
     id: item.id,
     mediaKind: item.media_kind,
+    collectionId: item.collection_id ?? null,
     releaseType: item.music_release_type,
     title: item.title,
     description: item.description,
@@ -176,6 +179,7 @@ async function buildMediaItemResponse(
     createdAt: item.created_at,
     publishedAt: item.published_at,
     durationMs: item.duration_ms,
+    trackNumber: item.trackNumber ?? null,
     asset: primaryAsset,
     coverAsset,
   };
@@ -187,6 +191,7 @@ async function createMusicUploadRecord(params: {
   userId: string;
   mediaKind: string;
   releaseType: string | null;
+  collectionId?: string | null;
   title: string;
   description: string;
   visibility: string;
@@ -200,6 +205,7 @@ async function createMusicUploadRecord(params: {
     userId,
     mediaKind,
     releaseType,
+    collectionId,
     title,
     description,
     visibility,
@@ -219,6 +225,7 @@ async function createMusicUploadRecord(params: {
   });
   const uploadedObjectKeys = [objectKey];
   const fileBuffer = Buffer.from(await file.arrayBuffer());
+  let coverAssetId: string | null = null;
 
   const { error: uploadError } = await supabase.storage.from(bucket).upload(objectKey, fileBuffer, {
     contentType: file.type || "application/octet-stream",
@@ -235,6 +242,7 @@ async function createMusicUploadRecord(params: {
     id: mediaItemId,
     owner_user_id: userId,
     media_kind: mediaKind,
+    collection_id: collectionId ?? null,
     music_release_type: mediaKind === "music" ? releaseType : null,
     title,
     description,
@@ -294,7 +302,7 @@ async function createMusicUploadRecord(params: {
   }
 
   if (coverArt instanceof File) {
-    const coverAssetId = crypto.randomUUID();
+    coverAssetId = crypto.randomUUID();
     const coverFileName = sanitizeFileName(coverArt.name || "cover-art.bin");
     const coverObjectKey = buildObjectKey({
       userId,
@@ -343,6 +351,7 @@ async function createMusicUploadRecord(params: {
   const item = await buildMediaItemResponse(supabase, {
     id: mediaItemId,
     media_kind: mediaKind,
+    collection_id: collectionId ?? null,
     music_release_type: mediaKind === "music" ? releaseType : null,
     title,
     description,
@@ -352,7 +361,16 @@ async function createMusicUploadRecord(params: {
     published_at: publishedAt,
     duration_ms: null,
     primary_asset_id: assetId,
+    trackNumber: trackNumber ?? null,
   });
+
+  if (collectionId && coverAssetId) {
+    await supabase
+      .from("media_collections")
+      .update({ cover_asset_id: coverAssetId })
+      .eq("id", collectionId)
+      .is("cover_asset_id", null);
+  }
 
   return {
     item,
@@ -453,7 +471,7 @@ export async function GET(request: Request) {
     const { data: mediaItems, error: itemsError } = await supabase
       .from("media_items")
       .select(
-        "id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
+        "id, collection_id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
       )
       .eq("owner_user_id", userId)
       .order("created_at", { ascending: false })
@@ -469,6 +487,8 @@ export async function GET(request: Request) {
 
     const primaryAssetsById = new Map<string, Record<string, unknown>>();
     const coverAssetsByItemId = new Map<string, Record<string, unknown>>();
+    const collectionTitleById = new Map<string, string>();
+    const trackNumberByItemId = new Map<string, number | null>();
 
     if (itemIds.length > 0) {
       const { data: assets, error: assetsError } = await supabase
@@ -492,12 +512,43 @@ export async function GET(request: Request) {
           coverAssetsByItemId.set(asset.media_item_id, signedAsset);
         }
       }
+
+      const { data: trackRows, error: trackRowsError } = await supabase
+        .from("music_track_details")
+        .select("media_item_id, release_track_number")
+        .in("media_item_id", itemIds);
+
+      if (trackRowsError) {
+        return NextResponse.json({ error: trackRowsError.message }, { status: 500 });
+      }
+
+      for (const trackRow of trackRows ?? []) {
+        trackNumberByItemId.set(trackRow.media_item_id, trackRow.release_track_number ?? null);
+      }
+    }
+
+    const collectionIds = [...new Set(items.map((item) => item.collection_id).filter(Boolean))];
+    if (collectionIds.length > 0) {
+      const { data: collections, error: collectionsError } = await supabase
+        .from("media_collections")
+        .select("id, title")
+        .in("id", collectionIds);
+
+      if (collectionsError) {
+        return NextResponse.json({ error: collectionsError.message }, { status: 500 });
+      }
+
+      for (const collection of collections ?? []) {
+        collectionTitleById.set(collection.id, collection.title);
+      }
     }
 
     return NextResponse.json({
       items: items.map((item) => ({
         id: item.id,
         mediaKind: item.media_kind,
+        collectionId: item.collection_id,
+        collectionTitle: item.collection_id ? collectionTitleById.get(item.collection_id) || null : null,
         releaseType: item.music_release_type,
         title: item.title,
         description: item.description,
@@ -506,6 +557,7 @@ export async function GET(request: Request) {
         createdAt: item.created_at,
         publishedAt: item.published_at,
         durationMs: item.duration_ms,
+        trackNumber: trackNumberByItemId.get(item.id) ?? null,
         asset: item.primary_asset_id ? primaryAssetsById.get(item.primary_asset_id) ?? null : null,
         coverAsset: coverAssetsByItemId.get(item.id) ?? null,
         likes: socialSummaryByItemId.get(item.id)?.likes || 0,
@@ -601,13 +653,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Singles can only contain one track." }, { status: 400 });
     }
 
-    if (mediaKind === "music" && releaseType !== "single" && files.length > MAX_TRACKS_PER_RELEASE) {
-      return NextResponse.json(
-        { error: `EP and album uploads are limited to ${MAX_TRACKS_PER_RELEASE} tracks.` },
-        { status: 400 },
-      );
-    }
-
     for (const file of files) {
       if (file.size <= 0) {
         return NextResponse.json({ error: "One of the selected files is empty." }, { status: 400 });
@@ -671,9 +716,31 @@ export async function POST(request: Request) {
 
     const createdMediaItemIds: string[] = [];
     const uploadedObjectKeysByBucket = new Map<string, string[]>();
+    let createdCollectionId: string | null = null;
 
     try {
       const items = [];
+      let collectionId: string | null = null;
+
+      if (mediaKind === "music" && releaseType !== "single") {
+        collectionId = crypto.randomUUID();
+        const publishedAt = visibility === "private" ? null : new Date().toISOString();
+        const { error: collectionInsertError } = await supabase.from("media_collections").insert({
+          id: collectionId,
+          owner_user_id: userId,
+          media_kind: "music",
+          title,
+          description,
+          visibility,
+          state: "ready",
+          published_at: publishedAt,
+        });
+
+        if (collectionInsertError) {
+          throw new Error(collectionInsertError.message);
+        }
+        createdCollectionId = collectionId;
+      }
 
       for (const [index, file] of files.entries()) {
         const trackTitle =
@@ -693,6 +760,7 @@ export async function POST(request: Request) {
           userId,
           mediaKind,
           releaseType: mediaKind === "music" ? releaseType : null,
+          collectionId,
           title: trackTitle,
           description: itemDescription,
           visibility,
@@ -706,7 +774,26 @@ export async function POST(request: Request) {
           ...(uploadedObjectKeysByBucket.get(bucket) || []),
           ...created.uploadedObjectKeys,
         ]);
-        items.push(created.item);
+        items.push({
+          ...created.item,
+          collectionTitle: collectionId ? title : null,
+        });
+      }
+
+      try {
+        if (description) {
+          await createMentionNotifications({
+            supabase,
+            actorUserId: userId,
+            body: description,
+            mediaItemId: items[0]?.id ?? null,
+            data: {
+              source: "media_description",
+            },
+          });
+        }
+      } catch (notificationError) {
+        console.error("Failed to create media mention notifications:", notificationError);
       }
 
       return NextResponse.json(
@@ -718,6 +805,10 @@ export async function POST(request: Request) {
     } catch (creationError) {
       for (const mediaItemId of createdMediaItemIds) {
         await supabase.from("media_items").delete().eq("id", mediaItemId);
+      }
+
+      if (createdCollectionId) {
+        await supabase.from("media_collections").delete().eq("id", createdCollectionId);
       }
 
       for (const [bucketName, objectKeys] of uploadedObjectKeysByBucket.entries()) {
@@ -778,7 +869,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const { userId } = await ensureAppUser(auth.authUserId, auth.email);
+    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
     await ensureProfile(userId, auth.email);
 
     const mediaItemId = String(payload?.id || "").trim();
@@ -812,10 +903,9 @@ export async function PATCH(request: Request) {
     const { data: existingItem, error: existingItemError } = await supabase
       .from("media_items")
       .select(
-        "id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
+        "id, owner_user_id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
       )
       .eq("id", mediaItemId)
-      .eq("owner_user_id", userId)
       .maybeSingle();
 
     if (existingItemError) {
@@ -824,6 +914,10 @@ export async function PATCH(request: Request) {
 
     if (!existingItem) {
       return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+    }
+
+    if (!isAdmin && existingItem.owner_user_id !== userId) {
+      return NextResponse.json({ error: "You cannot edit this media item." }, { status: 403 });
     }
 
     if (coverArt instanceof File) {
@@ -863,8 +957,7 @@ export async function PATCH(request: Request) {
         visibility,
         published_at: publishedAt,
       })
-      .eq("id", mediaItemId)
-      .eq("owner_user_id", userId);
+      .eq("id", mediaItemId);
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
@@ -876,7 +969,7 @@ export async function PATCH(request: Request) {
       await replaceCoverArt({
         supabase,
         bucket,
-        userId,
+        userId: existingItem.owner_user_id,
         mediaItemId,
         coverArt,
       });
@@ -885,14 +978,29 @@ export async function PATCH(request: Request) {
     const { data: updatedItem, error: updatedItemError } = await supabase
       .from("media_items")
       .select(
-        "id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
+        "id, owner_user_id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
       )
       .eq("id", mediaItemId)
-      .eq("owner_user_id", userId)
       .single();
 
     if (updatedItemError) {
       return NextResponse.json({ error: updatedItemError.message }, { status: 500 });
+    }
+
+    try {
+      if (description) {
+        await createMentionNotifications({
+          supabase,
+          actorUserId: userId,
+          body: description,
+          mediaItemId,
+          data: {
+            source: "media_description",
+          },
+        });
+      }
+    } catch (notificationError) {
+      console.error("Failed to create media mention notifications:", notificationError);
     }
 
     const item = await buildMediaItemResponse(supabase, updatedItem);
@@ -910,7 +1018,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const { userId } = await ensureAppUser(auth.authUserId, auth.email);
+    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
     await ensureProfile(userId, auth.email);
 
     const { searchParams } = new URL(request.url);
@@ -923,9 +1031,8 @@ export async function DELETE(request: Request) {
     const supabase = createSupabaseServiceRoleClient();
     const { data: mediaItem, error: mediaItemError } = await supabase
       .from("media_items")
-      .select("id")
+      .select("id, owner_user_id")
       .eq("id", mediaItemId)
-      .eq("owner_user_id", userId)
       .maybeSingle();
 
     if (mediaItemError) {
@@ -934,6 +1041,10 @@ export async function DELETE(request: Request) {
 
     if (!mediaItem) {
       return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+    }
+
+    if (!isAdmin && mediaItem.owner_user_id !== userId) {
+      return NextResponse.json({ error: "You cannot delete this media item." }, { status: 403 });
     }
 
     const { data: assets, error: assetsError } = await supabase

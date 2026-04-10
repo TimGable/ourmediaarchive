@@ -15,7 +15,7 @@ type PatchProfilePayload = {
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
-async function buildProfileResponse(userId: string, isAdmin: boolean) {
+async function buildProfileResponse(userId: string, isAdmin: boolean, isModerator: boolean) {
   const supabase = createSupabaseServiceRoleClient();
 
   const { data: profile, error: profileError } = await supabase
@@ -90,6 +90,7 @@ async function buildProfileResponse(userId: string, isAdmin: boolean) {
     followerCount: followerCount || 0,
     followingCount: followingCount || 0,
     isAdmin,
+    isModerator,
   };
 }
 
@@ -100,9 +101,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
+    const { userId, isAdmin, isModerator } = await ensureAppUser(auth.authUserId, auth.email);
     await ensureProfile(userId, auth.email);
-    const profile = await buildProfileResponse(userId, isAdmin);
+    const profile = await buildProfileResponse(userId, isAdmin, isModerator);
 
     return NextResponse.json({
       profile,
@@ -128,7 +129,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
+    const { userId, isAdmin, isModerator } = await ensureAppUser(auth.authUserId, auth.email);
     await ensureProfile(userId, auth.email);
 
     const supabase = createSupabaseServiceRoleClient();
@@ -210,11 +211,74 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const profile = await buildProfileResponse(userId, isAdmin);
+    const profile = await buildProfileResponse(userId, isAdmin, isModerator);
 
     return NextResponse.json({
       profile,
     });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const auth = await getAuthContext(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { userId } = await ensureAppUser(auth.authUserId, auth.email);
+    const supabase = createSupabaseServiceRoleClient();
+
+    const { data: assets, error: assetsError } = await supabase
+      .from("media_assets")
+      .select("bucket, object_key")
+      .eq("owner_user_id", userId);
+
+    if (assetsError) {
+      return NextResponse.json({ error: assetsError.message }, { status: 500 });
+    }
+
+    const objectKeysByBucket = new Map<string, string[]>();
+    for (const asset of assets ?? []) {
+      if (!asset.bucket || !asset.object_key) {
+        continue;
+      }
+
+      objectKeysByBucket.set(asset.bucket, [
+        ...(objectKeysByBucket.get(asset.bucket) || []),
+        asset.object_key,
+      ]);
+    }
+
+    for (const [bucket, objectKeys] of objectKeysByBucket.entries()) {
+      if (objectKeys.length === 0) {
+        continue;
+      }
+
+      const { error: storageError } = await supabase.storage.from(bucket).remove(objectKeys);
+      if (storageError) {
+        return NextResponse.json({ error: storageError.message }, { status: 500 });
+      }
+    }
+
+    const { error: deleteUserError } = await supabase
+      .from("users")
+      .delete()
+      .eq("id", userId);
+
+    if (deleteUserError) {
+      return NextResponse.json({ error: deleteUserError.message }, { status: 500 });
+    }
+
+    const { error: deleteAuthUserError } = await supabase.auth.admin.deleteUser(auth.authUserId);
+    if (deleteAuthUserError) {
+      return NextResponse.json({ error: deleteAuthUserError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     return NextResponse.json({ error: message }, { status: 500 });

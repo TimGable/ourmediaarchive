@@ -47,7 +47,7 @@ export function CategorySelector({ onCategorySelect, onBack, showBackButton = tr
         initial={{ opacity: 0, y: -18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={PAGE_TRANSITION}
-        className="mb-12 border border-white/20 p-6 text-center md:mb-16 md:p-12"
+        className="mb-12 text-center md:mb-16"
       >
         <h2 className="text-3xl tracking-tight md:text-4xl lg:text-5xl">browse artists</h2>
       </motion.div>

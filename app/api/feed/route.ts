@@ -10,6 +10,7 @@ const DISCOVERY_SAMPLE_SIZE = 160;
 type FeedMediaItemRow = {
   id: string;
   owner_user_id: string;
+  collection_id: string | null;
   media_kind: string;
   music_release_type: string | null;
   title: string;
@@ -19,6 +20,7 @@ type FeedMediaItemRow = {
   published_at: string | null;
   duration_ms: number | null;
   primary_asset_id: string | null;
+  trackNumber?: number | null;
 };
 
 type FeedSlugRow = {
@@ -95,7 +97,7 @@ export async function GET(request: Request) {
     const mediaItemsQuery = supabase
       .from("media_items")
       .select(
-        "id, owner_user_id, media_kind, music_release_type, title, description, visibility, created_at, published_at, duration_ms, primary_asset_id",
+        "id, owner_user_id, collection_id, media_kind, music_release_type, title, description, visibility, created_at, published_at, duration_ms, primary_asset_id",
       )
       .eq("state", "ready")
       .eq("visibility", "public")
@@ -175,6 +177,8 @@ export async function GET(request: Request) {
 
     const mediaAssetsById = new Map<string, Record<string, unknown>>();
     const coverAssetsByItemId = new Map<string, Record<string, unknown>>();
+    const collectionTitleById = new Map<string, string>();
+    const trackNumberByItemId = new Map<string, number | null>();
     const avatarUrlsByAssetId = new Map<string, string | null>();
     const likeCountsByItemId = new Map<string, number>();
     const commentCountsByItemId = new Map<string, number>();
@@ -250,6 +254,19 @@ export async function GET(request: Request) {
       for (const row of likedRows ?? []) {
         likedItemIds.add(row.media_item_id);
       }
+
+      const { data: trackRows, error: trackRowsError } = await supabase
+        .from("music_track_details")
+        .select("media_item_id, release_track_number")
+        .in("media_item_id", itemIds);
+
+      if (trackRowsError) {
+        return NextResponse.json({ error: trackRowsError.message }, { status: 500 });
+      }
+
+      for (const trackRow of trackRows ?? []) {
+        trackNumberByItemId.set(trackRow.media_item_id, trackRow.release_track_number ?? null);
+      }
     }
 
     if (avatarAssetIds.length > 0) {
@@ -268,6 +285,22 @@ export async function GET(request: Request) {
       }
     }
 
+    const collectionIds = [...new Set((mediaItems ?? []).map((item) => item.collection_id).filter(Boolean))];
+    if (collectionIds.length > 0) {
+      const { data: collections, error: collectionsError } = await supabase
+        .from("media_collections")
+        .select("id, title")
+        .in("id", collectionIds);
+
+      if (collectionsError) {
+        return NextResponse.json({ error: collectionsError.message }, { status: 500 });
+      }
+
+      for (const collection of collections ?? []) {
+        collectionTitleById.set(collection.id, collection.title);
+      }
+    }
+
     const items = (mediaItems ?? []).flatMap((item: FeedMediaItemRow) => {
       const artist = profileByUserId.get(item.owner_user_id);
       const slug = slugByItemId.get(item.id);
@@ -278,6 +311,8 @@ export async function GET(request: Request) {
       return [
         {
           id: item.id,
+          collectionId: item.collection_id,
+          collectionTitle: item.collection_id ? collectionTitleById.get(item.collection_id) || null : null,
           mediaKind: item.media_kind,
           releaseType: item.music_release_type,
           title: item.title,
@@ -286,6 +321,7 @@ export async function GET(request: Request) {
           createdAt: item.created_at,
           publishedAt: item.published_at,
           durationMs: item.duration_ms,
+          trackNumber: trackNumberByItemId.get(item.id) ?? null,
           slug,
           asset: item.primary_asset_id ? mediaAssetsById.get(item.primary_asset_id) ?? null : null,
           coverAsset: coverAssetsByItemId.get(item.id) ?? null,

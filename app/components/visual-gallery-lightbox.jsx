@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, ChevronRight, Palette, Video, X } from "lucide-react";
+import { MentionText } from "./mention-text";
 import { ViewportPortal } from "./viewport-portal";
 import { buildPublicMediaPath } from "@/lib/media-slugs";
 
@@ -68,6 +69,8 @@ export function VisualGalleryLightbox({
   useEffect(() => {
     if (currentIndex < 0) {
       previousIndexRef.current = currentIndex;
+      // Direction is derived from the parent-controlled gallery index.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDirection(0);
       return;
     }
@@ -224,7 +227,11 @@ export function VisualGalleryLightbox({
                   <div>
                     <p className="mb-1 text-[11px] uppercase tracking-[0.18em] text-gray-500">description</p>
                     <p className="leading-relaxed text-gray-300">
-                      {item.description || "No description added for this piece."}
+                      {item.description ? (
+                        <MentionText text={item.description} />
+                      ) : (
+                        "No description added for this piece."
+                      )}
                     </p>
                   </div>
 

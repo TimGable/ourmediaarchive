@@ -32,7 +32,7 @@ Default connection values:
 
 - Host: `localhost`
 - Port: `5432`
-- Database: `ourmediaarchive`
+- Database: `splotch`
 - User: `oma_app`
 - Password: `oma_dev_password`
 

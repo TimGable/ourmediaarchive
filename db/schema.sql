@@ -1,4 +1,4 @@
--- Our Media Archive: initial PostgreSQL schema
+-- Splotch: initial PostgreSQL schema
 -- This keeps app data in Postgres and stores binary media in object storage.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
   email CITEXT UNIQUE NOT NULL,
   password_change_required BOOLEAN NOT NULL DEFAULT true,
   is_admin BOOLEAN NOT NULL DEFAULT false,
+  is_moderator BOOLEAN NOT NULL DEFAULT false,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -238,7 +239,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   data JSONB NOT NULL DEFAULT '{}'::jsonb,
   read_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT notifications_type_check CHECK (type IN ('follow', 'like', 'comment'))
+  CONSTRAINT notifications_type_check CHECK (type IN ('follow', 'like', 'comment', 'mention'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created
@@ -246,6 +247,38 @@ CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created
 
 CREATE INDEX IF NOT EXISTS idx_notifications_unread
   ON notifications (recipient_user_id, read_at, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS announcement_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  author_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcement_posts_created
+  ON announcement_posts (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS announcement_likes (
+  announcement_post_id UUID NOT NULL REFERENCES announcement_posts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (announcement_post_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS announcement_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  announcement_post_id UUID NOT NULL REFERENCES announcement_posts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  parent_comment_id UUID REFERENCES announcement_comments(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcement_comments_post
+  ON announcement_comments (announcement_post_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS play_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

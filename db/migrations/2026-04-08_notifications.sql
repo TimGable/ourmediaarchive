@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   data JSONB NOT NULL DEFAULT '{}'::jsonb,
   read_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT notifications_type_check CHECK (type IN ('follow', 'like', 'comment'))
+  CONSTRAINT notifications_type_check CHECK (type IN ('follow', 'like', 'comment', 'mention'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created

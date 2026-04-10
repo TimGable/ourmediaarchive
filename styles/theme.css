@@ -274,6 +274,84 @@
 }
 
 @layer utilities {
+  @keyframes archive-loader-bar {
+    0%,
+    100% {
+      opacity: 0.34;
+      transform: scaleY(0.48);
+    }
+
+    28% {
+      opacity: 0.96;
+      transform: scaleY(1);
+    }
+
+    58% {
+      opacity: 0.5;
+      transform: scaleY(0.64);
+    }
+
+    78% {
+      opacity: 0.8;
+      transform: scaleY(0.84);
+    }
+  }
+
+  @keyframes archive-loader-glow {
+    0%,
+    100% {
+      opacity: 0.16;
+      transform: scale(0.96);
+    }
+
+    50% {
+      opacity: 0.28;
+      transform: scale(1.04);
+    }
+  }
+
+  @keyframes archive-loader-ring {
+    0%,
+    100% {
+      opacity: 0.14;
+    }
+
+    50% {
+      opacity: 0.24;
+    }
+  }
+
+  .archive-loader-bar {
+    animation: archive-loader-bar 1.45s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    transform-origin: bottom;
+  }
+
+  .archive-loader-glow {
+    animation: archive-loader-glow 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .archive-loader-ring {
+    animation: archive-loader-ring 1.9s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .archive-scrollbar-thin {
+    scrollbar-color: rgba(255, 255, 255, 0.28) rgba(255, 255, 255, 0.04);
+    scrollbar-width: thin;
+  }
+
+  .archive-scrollbar-thin::-webkit-scrollbar {
+    width: 0.45rem;
+  }
+
+  .archive-scrollbar-thin::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .archive-scrollbar-thin::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.12));
+    border-radius: 999px;
+  }
+
   .scrollbar-hidden {
     -ms-overflow-style: none;
     scrollbar-width: none;

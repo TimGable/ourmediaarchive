@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { ChevronDown, Trash2 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function AdminPanel({ onBack }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const deleteTimersRef = useRef(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -14,6 +15,7 @@ export function AdminPanel({ onBack }) {
   const [denyOpenRequestId, setDenyOpenRequestId] = useState(null);
   const [denyReason, setDenyReason] = useState("");
   const [recentlyMovedRequestId, setRecentlyMovedRequestId] = useState(null);
+  const [deletingRequestIds, setDeletingRequestIds] = useState([]);
 
   const fetchInviteRequests = useCallback(async () => {
     setIsLoading(true);
@@ -51,6 +53,13 @@ export function AdminPanel({ onBack }) {
       fetchInviteRequests();
     });
   }, [fetchInviteRequests]);
+
+  useEffect(() => {
+    return () => {
+      deleteTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      deleteTimersRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (!recentlyMovedRequestId) return;
@@ -221,7 +230,17 @@ export function AdminPanel({ onBack }) {
         return;
       }
 
-      setInviteRequests((current) => current.filter((request) => request.id !== requestId));
+      setDeletingRequestIds((current) =>
+        current.includes(requestId) ? current : [...current, requestId],
+      );
+
+      const timer = window.setTimeout(() => {
+        setInviteRequests((current) => current.filter((request) => request.id !== requestId));
+        setDeletingRequestIds((current) => current.filter((id) => id !== requestId));
+        deleteTimersRef.current.delete(requestId);
+      }, 360);
+
+      deleteTimersRef.current.set(requestId, timer);
     });
 
     setActiveRequestId(null);
@@ -241,7 +260,7 @@ export function AdminPanel({ onBack }) {
       </motion.button>
 
       <div className="mb-8">
-        <h2 className="text-3xl md:text-4xl mb-3">admin</h2>
+        <h2 className="text-3xl md:text-4xl mb-3">moderation</h2>
         <p className="text-gray-400">manage invite pipeline</p>
       </div>
 
@@ -393,6 +412,7 @@ export function AdminPanel({ onBack }) {
                       const statusLabel = request.status || "handled";
                       const isApproved = request.status === "approved";
                       const wasRecentlyMoved = recentlyMovedRequestId === request.id;
+                      const isDeleting = deletingRequestIds.includes(request.id);
 
                       return (
                         <motion.div
@@ -400,9 +420,13 @@ export function AdminPanel({ onBack }) {
                           layout
                           layoutId={`invite-request-${request.id}`}
                           initial={{ opacity: 0, y: 16 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          transition={{ duration: 0.28 }}
+                          animate={
+                            isDeleting
+                              ? { opacity: 0, y: -14, scale: 0.985, filter: "blur(8px)" }
+                              : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }
+                          }
+                          exit={{ opacity: 0, y: -14, scale: 0.985, filter: "blur(8px)" }}
+                          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
                           className={`border p-5 ${
                             wasRecentlyMoved
                               ? "border-emerald-400/60 bg-emerald-500/10"
@@ -424,7 +448,7 @@ export function AdminPanel({ onBack }) {
                               </span>
                               <motion.button
                                 onClick={() => handleDelete(request.id)}
-                                disabled={isBusy}
+                                disabled={isBusy || isDeleting}
                                 className="w-9 h-9 inline-flex items-center justify-center border border-red-500/50 text-red-400 hover:text-red-300 hover:bg-red-500/10 hover:border-red-400 transition-all disabled:opacity-60"
                                 whileHover={{ scale: 1.04 }}
                                 whileTap={{ scale: 0.96 }}

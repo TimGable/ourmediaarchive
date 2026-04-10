@@ -38,7 +38,7 @@ async function ensureAppUser(authUserId: string, email: string) {
 
   const { data: byAuthUser, error: byAuthUserError } = await supabase
     .from("users")
-    .select("id, email, is_admin")
+    .select("id, email, is_admin, is_moderator")
     .eq("auth_user_id", authUserId)
     .maybeSingle();
 
@@ -66,22 +66,30 @@ async function ensureAppUser(authUserId: string, email: string) {
         .from("users")
         .update({ email })
         .eq("id", byAuthUser.id)
-        .select("id, is_admin")
+        .select("id, is_admin, is_moderator")
         .single();
 
       if (updateError || !updated?.id) {
         throw new Error(updateError?.message ?? "Failed to update app user email.");
       }
 
-      return { userId: updated.id as string, isAdmin: Boolean(updated.is_admin) };
+      return {
+        userId: updated.id as string,
+        isAdmin: Boolean(updated.is_admin),
+        isModerator: Boolean(updated.is_moderator),
+      };
     }
 
-    return { userId: byAuthUser.id as string, isAdmin: Boolean(byAuthUser.is_admin) };
+    return {
+      userId: byAuthUser.id as string,
+      isAdmin: Boolean(byAuthUser.is_admin),
+      isModerator: Boolean(byAuthUser.is_moderator),
+    };
   }
 
   const { data: byEmail, error: byEmailError } = await supabase
     .from("users")
-    .select("id, auth_user_id, is_admin")
+    .select("id, auth_user_id, is_admin, is_moderator")
     .eq("email", email)
     .maybeSingle();
 
@@ -99,17 +107,25 @@ async function ensureAppUser(authUserId: string, email: string) {
         .from("users")
         .update({ auth_user_id: authUserId })
         .eq("id", byEmail.id)
-        .select("id, is_admin")
+        .select("id, is_admin, is_moderator")
         .single();
 
       if (updateError || !updated?.id) {
         throw new Error(updateError?.message ?? "Failed to link app user.");
       }
 
-      return { userId: updated.id as string, isAdmin: Boolean(updated.is_admin) };
+      return {
+        userId: updated.id as string,
+        isAdmin: Boolean(updated.is_admin),
+        isModerator: Boolean(updated.is_moderator),
+      };
     }
 
-    return { userId: byEmail.id as string, isAdmin: Boolean(byEmail.is_admin) };
+    return {
+      userId: byEmail.id as string,
+      isAdmin: Boolean(byEmail.is_admin),
+      isModerator: Boolean(byEmail.is_moderator),
+    };
   }
 
   const { data: inserted, error: insertError } = await supabase
@@ -118,15 +134,20 @@ async function ensureAppUser(authUserId: string, email: string) {
       auth_user_id: authUserId,
       email,
       is_admin: false,
+      is_moderator: false,
     })
-    .select("id, is_admin")
+    .select("id, is_admin, is_moderator")
     .single();
 
   if (insertError || !inserted?.id) {
     throw new Error(insertError?.message ?? "Failed to ensure app user.");
   }
 
-  return { userId: inserted.id as string, isAdmin: Boolean(inserted.is_admin) };
+  return {
+    userId: inserted.id as string,
+    isAdmin: Boolean(inserted.is_admin),
+    isModerator: Boolean(inserted.is_moderator),
+  };
 }
 
 type Params = {
@@ -140,8 +161,8 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const { userId, isAdmin } = await ensureAppUser(auth.authUserId, auth.email);
-    if (!isAdmin) {
+    const { userId, isAdmin, isModerator } = await ensureAppUser(auth.authUserId, auth.email);
+    if (!isAdmin && !isModerator) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 

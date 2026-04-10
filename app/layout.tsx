@@ -3,8 +3,8 @@ import "../styles/index.css";
 import { PublicAudioProvider } from "@/app/components/public-audio-context";
 
 export const metadata: Metadata = {
-  title: "Our Media Archive",
-  description: "Private invite-only media archive",
+  title: "splotch",
+  description: "Splotch | Our media archive",
 };
 
 export default function RootLayout({

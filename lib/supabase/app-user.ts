@@ -38,7 +38,7 @@ export async function ensureAppUser(authUserId: string, email: string) {
 
   const { data: byAuthUser, error: byAuthUserError } = await supabase
     .from("users")
-    .select("id, email, is_admin")
+    .select("id, email, is_admin, is_moderator")
     .eq("auth_user_id", authUserId)
     .maybeSingle();
 
@@ -66,7 +66,7 @@ export async function ensureAppUser(authUserId: string, email: string) {
         .from("users")
         .update({ email })
         .eq("id", byAuthUser.id)
-        .select("id, is_admin")
+        .select("id, is_admin, is_moderator")
         .single();
 
       if (updateError || !updated?.id) {
@@ -76,18 +76,20 @@ export async function ensureAppUser(authUserId: string, email: string) {
       return {
         userId: updated.id as string,
         isAdmin: Boolean(updated.is_admin),
+        isModerator: Boolean(updated.is_moderator),
       };
     }
 
     return {
       userId: byAuthUser.id as string,
       isAdmin: Boolean(byAuthUser.is_admin),
+      isModerator: Boolean(byAuthUser.is_moderator),
     };
   }
 
   const { data: byEmail, error: byEmailError } = await supabase
     .from("users")
-    .select("id, auth_user_id, is_admin")
+    .select("id, auth_user_id, is_admin, is_moderator")
     .eq("email", email)
     .maybeSingle();
 
@@ -105,7 +107,7 @@ export async function ensureAppUser(authUserId: string, email: string) {
         .from("users")
         .update({ auth_user_id: authUserId })
         .eq("id", byEmail.id)
-        .select("id, is_admin")
+        .select("id, is_admin, is_moderator")
         .single();
 
       if (updateError || !updated?.id) {
@@ -115,12 +117,14 @@ export async function ensureAppUser(authUserId: string, email: string) {
       return {
         userId: updated.id as string,
         isAdmin: Boolean(updated.is_admin),
+        isModerator: Boolean(updated.is_moderator),
       };
     }
 
     return {
       userId: byEmail.id as string,
       isAdmin: Boolean(byEmail.is_admin),
+      isModerator: Boolean(byEmail.is_moderator),
     };
   }
 
@@ -130,8 +134,9 @@ export async function ensureAppUser(authUserId: string, email: string) {
       auth_user_id: authUserId,
       email,
       is_admin: false,
+      is_moderator: false,
     })
-    .select("id, is_admin")
+    .select("id, is_admin, is_moderator")
     .single();
 
   if (insertError || !inserted?.id) {
@@ -141,6 +146,7 @@ export async function ensureAppUser(authUserId: string, email: string) {
   return {
     userId: inserted.id as string,
     isAdmin: Boolean(inserted.is_admin),
+    isModerator: Boolean(inserted.is_moderator),
   };
 }
 

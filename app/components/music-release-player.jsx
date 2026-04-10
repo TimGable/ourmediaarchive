@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Check, Copy, Edit2, Ellipsis, Heart, ListPlus, MessageCircle, Music2, Pause, Play, Share2 } from "lucide-react";
+import { MentionText } from "./mention-text";
 import { Waveform } from "./waveform";
 import {
   DropdownMenu,
@@ -184,7 +185,9 @@ export function MusicReleasePlayer({
                 )
               ) : null}
               {item.description && (
-                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-400">{item.description}</p>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-400">
+                  <MentionText text={item.description} />
+                </p>
               )}
             </div>
 

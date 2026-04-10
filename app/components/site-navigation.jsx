@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, LogOut, Menu, Settings2, Upload, UserCircle2, X } from "lucide-react";
 import { NotificationsPopover } from "./notifications-popover";
+import { SiteSearch } from "./site-search";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,8 +14,9 @@ import {
 import { PAGE_TRANSITION, SOFT_BUTTON_HOVER, SOFT_BUTTON_TAP, SOFT_EASE } from "@/lib/motion";
 
 export function SiteNavigation({
-  isAdmin = false,
+  canModerate = false,
   onHome,
+  onMyProfile,
   onUpload,
   onAccountSettings,
   onAdmin,
@@ -34,13 +36,13 @@ export function SiteNavigation({
       <DropdownMenuTrigger asChild>
         <motion.button
           type="button"
-          className="inline-flex h-11 items-center gap-2 border border-white/15 px-2.5 text-gray-300 transition-colors hover:border-white/40 hover:text-white disabled:cursor-default disabled:opacity-50"
+          className="inline-flex h-12 cursor-pointer items-center gap-2.5 border border-white/15 px-3 text-gray-300 transition-colors hover:border-white/40 hover:text-white disabled:cursor-default disabled:opacity-50"
           whileHover={disableProfileActions ? undefined : SOFT_BUTTON_HOVER}
           whileTap={disableProfileActions ? undefined : SOFT_BUTTON_TAP}
           disabled={disableProfileActions}
           aria-label={avatarLabel}
         >
-          <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/[0.04]">
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/[0.04]">
             {profileAvatarUrl ? (
               <img
                 src={profileAvatarUrl}
@@ -48,16 +50,31 @@ export function SiteNavigation({
                 className="h-full w-full object-cover"
               />
             ) : (
-              <UserCircle2 className="h-4.5 w-4.5 text-white/70" />
+              <UserCircle2 className="h-5 w-5 text-white/70" />
             )}
           </div>
-          <ChevronDown className="h-4 w-4 text-gray-500" />
+          <ChevronDown className="h-4.5 w-4.5 text-gray-500" />
         </motion.button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
         className="min-w-[13rem] border-white/15 bg-black text-white"
       >
+        {onMyProfile ? (
+          <DropdownMenuItem
+            onClick={() => {
+              if (disableProfileActions) {
+                return;
+              }
+              onMyProfile();
+              closeMobileMenu();
+            }}
+            className="gap-2.5 px-3 py-2 text-white focus:bg-white/10 focus:text-white"
+          >
+            <UserCircle2 className="h-4 w-4 text-gray-400" />
+            <span>my profile</span>
+          </DropdownMenuItem>
+        ) : null}
         {onUpload ? (
           <DropdownMenuItem
             onClick={() => {
@@ -111,68 +128,80 @@ export function SiteNavigation({
       animate={{ y: 0, opacity: 1 }}
       transition={PAGE_TRANSITION}
     >
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-6 md:py-6">
-        <motion.button
-          type="button"
-          className="cursor-pointer text-left text-xl tracking-wide transition-colors hover:text-gray-300 md:text-2xl disabled:cursor-default disabled:hover:text-white"
-          onClick={() => {
-            if (disableHome || !onHome) {
-              return;
-            }
-            onHome();
-            closeMobileMenu();
-          }}
-          whileHover={disableHome ? undefined : SOFT_BUTTON_HOVER}
-          whileTap={disableHome ? undefined : SOFT_BUTTON_TAP}
-          transition={PAGE_TRANSITION}
-          disabled={disableHome || !onHome}
-        >
-          our media archive
-        </motion.button>
+      <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 md:py-6">
+        <div className="relative flex items-center justify-between gap-4">
+          <motion.button
+            type="button"
+            className="cursor-pointer text-left text-xl tracking-wide transition-colors hover:text-gray-300 md:text-2xl disabled:cursor-default disabled:hover:text-white"
+            onClick={() => {
+              if (disableHome || !onHome) {
+                return;
+              }
+              onHome();
+              closeMobileMenu();
+            }}
+            whileHover={disableHome ? undefined : SOFT_BUTTON_HOVER}
+            whileTap={disableHome ? undefined : SOFT_BUTTON_TAP}
+            transition={PAGE_TRANSITION}
+            disabled={disableHome || !onHome}
+          >
+            splotch
+          </motion.button>
 
-        <div className="hidden items-center gap-8 lg:flex">
-          {isAdmin && onAdmin ? (
-            <motion.button
-              type="button"
-              onClick={onAdmin}
-              className="relative cursor-pointer text-gray-400 transition-colors hover:text-white"
-              whileHover={SOFT_BUTTON_HOVER}
-              whileTap={SOFT_BUTTON_TAP}
-            >
-              administrator page
-              <motion.div
-                className="absolute -bottom-1 left-0 right-0 h-px bg-white"
-                initial={{ scaleX: 0 }}
-                whileHover={{ scaleX: 1 }}
-                transition={{ duration: 0.28, ease: SOFT_EASE }}
-              />
-            </motion.button>
-          ) : null}
+          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden w-full max-w-[32rem] -translate-x-1/2 -translate-y-1/2 px-6 lg:block">
+            <div className="pointer-events-auto">
+              <SiteSearch compact />
+            </div>
+          </div>
 
-          {(onAccountSettings || onUpload) ? <NotificationsPopover /> : null}
-          {profileMenu}
+          <div className="hidden items-center justify-end gap-8 lg:flex">
+            {canModerate && onAdmin ? (
+              <motion.button
+                type="button"
+                onClick={onAdmin}
+                className="relative cursor-pointer text-gray-400 transition-colors hover:text-white"
+                whileHover={SOFT_BUTTON_HOVER}
+                whileTap={SOFT_BUTTON_TAP}
+              >
+                moderation page
+                <motion.div
+                  className="absolute -bottom-1 left-0 right-0 h-px bg-white"
+                  initial={{ scaleX: 0 }}
+                  whileHover={{ scaleX: 1 }}
+                  transition={{ duration: 0.28, ease: SOFT_EASE }}
+                />
+              </motion.button>
+            ) : null}
+
+            {(onAccountSettings || onUpload) ? <NotificationsPopover /> : null}
+            {profileMenu}
+          </div>
+
+          <div className="flex items-center gap-2 lg:hidden">
+            {(onAccountSettings || onUpload) ? <NotificationsPopover compact /> : null}
+            {profileMenu}
+            {canModerate && onAdmin ? (
+              <motion.button
+                type="button"
+                className="flex h-10 w-10 items-center justify-center"
+                onClick={() => setShowMobileMenu((current) => !current)}
+                whileHover={SOFT_BUTTON_HOVER}
+                whileTap={SOFT_BUTTON_TAP}
+                aria-label="Toggle navigation"
+              >
+                {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
+              </motion.button>
+            ) : null}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 lg:hidden">
-          {(onAccountSettings || onUpload) ? <NotificationsPopover compact /> : null}
-          {profileMenu}
-          {isAdmin && onAdmin ? (
-            <motion.button
-              type="button"
-              className="flex h-10 w-10 items-center justify-center"
-              onClick={() => setShowMobileMenu((current) => !current)}
-              whileHover={SOFT_BUTTON_HOVER}
-              whileTap={SOFT_BUTTON_TAP}
-              aria-label="Toggle navigation"
-            >
-              {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
-            </motion.button>
-          ) : null}
+        <div className="mt-4 lg:hidden">
+          <SiteSearch compact />
         </div>
       </div>
 
       <AnimatePresence>
-        {showMobileMenu && isAdmin && onAdmin ? (
+        {showMobileMenu && canModerate && onAdmin ? (
           <motion.div
             className="border-t border-white/10 bg-black/90 backdrop-blur-lg lg:hidden"
             initial={{ height: 0, opacity: 0 }}
@@ -181,7 +210,7 @@ export function SiteNavigation({
             transition={{ duration: 0.32, ease: SOFT_EASE }}
           >
             <div className="space-y-2 px-4 py-4">
-              {isAdmin && onAdmin ? (
+              {canModerate && onAdmin ? (
                 <motion.button
                   type="button"
                   onClick={() => {
@@ -192,7 +221,7 @@ export function SiteNavigation({
                   whileHover={SOFT_BUTTON_HOVER}
                   whileTap={SOFT_BUTTON_TAP}
                 >
-                  administrator page
+                  moderation page
                 </motion.button>
               ) : null}
             </div>

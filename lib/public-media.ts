@@ -9,6 +9,7 @@ type VisibilityLevel = "public" | "unlisted";
 type RawMediaItem = {
   id: string;
   media_kind: string;
+  collection_id: string | null;
   music_release_type: string | null;
   title: string;
   description: string;
@@ -18,6 +19,7 @@ type RawMediaItem = {
   published_at: string | null;
   duration_ms: number | null;
   primary_asset_id: string | null;
+  trackNumber?: number | null;
 };
 
 async function createSignedAssetPayload(
@@ -77,7 +79,11 @@ async function loadProfileBase(username: string) {
     { count: followerCount, error: followerCountError },
     { count: followingCount, error: followingCountError },
   ] = await Promise.all([
-    supabase.from("users").select("auth_user_id").eq("id", profile.user_id).maybeSingle(),
+    supabase
+      .from("users")
+      .select("auth_user_id, is_admin, is_moderator")
+      .eq("id", profile.user_id)
+      .maybeSingle(),
     supabase.from("profile_categories").select("category").eq("user_id", profile.user_id),
     supabase
       .from("follows")
@@ -127,6 +133,8 @@ async function loadProfileBase(username: string) {
     profile: {
       userId: profile.user_id,
       authUserId: userRecord?.auth_user_id || null,
+      isAdmin: Boolean(userRecord?.is_admin),
+      isModerator: Boolean(userRecord?.is_moderator),
       username: profile.username,
       displayName: profile.display_name,
       bio: profile.bio,
@@ -146,7 +154,7 @@ async function loadMediaItems(
   const { data: mediaItems, error: mediaItemsError } = await supabase
     .from("media_items")
     .select(
-      "id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
+      "id, collection_id, media_kind, music_release_type, title, description, visibility, state, created_at, published_at, duration_ms, primary_asset_id",
     )
     .eq("owner_user_id", userId)
     .eq("state", "ready")
@@ -162,6 +170,8 @@ async function loadMediaItems(
   const socialSummaryByItemId = await getMediaSocialSummary(supabase, itemIds);
   const primaryAssetsById = new Map<string, Record<string, unknown>>();
   const coverAssetsByItemId = new Map<string, Record<string, unknown>>();
+  const collectionTitleById = new Map<string, string>();
+  const trackNumberByItemId = new Map<string, number | null>();
 
   if (itemIds.length > 0) {
     const { data: assets, error: assetsError } = await supabase
@@ -185,12 +195,43 @@ async function loadMediaItems(
         coverAssetsByItemId.set(asset.media_item_id, signedAsset);
       }
     }
+
+    const { data: trackRows, error: trackRowsError } = await supabase
+      .from("music_track_details")
+      .select("media_item_id, release_track_number")
+      .in("media_item_id", itemIds);
+
+    if (trackRowsError) {
+      throw new Error(trackRowsError.message);
+    }
+
+    for (const trackRow of trackRows ?? []) {
+      trackNumberByItemId.set(trackRow.media_item_id, trackRow.release_track_number ?? null);
+    }
+  }
+
+  const collectionIds = [...new Set((mediaItems ?? []).map((item) => item.collection_id).filter(Boolean))];
+  if (collectionIds.length > 0) {
+    const { data: collections, error: collectionsError } = await supabase
+      .from("media_collections")
+      .select("id, title")
+      .in("id", collectionIds);
+
+    if (collectionsError) {
+      throw new Error(collectionsError.message);
+    }
+
+    for (const collection of collections ?? []) {
+      collectionTitleById.set(collection.id, collection.title);
+    }
   }
 
   return attachPublicMediaSlugs(
     (mediaItems ?? []).map((item: RawMediaItem) => ({
       id: item.id,
       mediaKind: item.media_kind,
+      collectionId: item.collection_id,
+      collectionTitle: item.collection_id ? collectionTitleById.get(item.collection_id) || null : null,
       releaseType: item.music_release_type,
       title: item.title,
       description: item.description,
@@ -199,6 +240,7 @@ async function loadMediaItems(
       createdAt: item.created_at,
       publishedAt: item.published_at,
       durationMs: item.duration_ms,
+      trackNumber: trackNumberByItemId.get(item.id) ?? null,
       asset: item.primary_asset_id ? primaryAssetsById.get(item.primary_asset_id) ?? null : null,
       coverAsset: coverAssetsByItemId.get(item.id) ?? null,
       likes: socialSummaryByItemId.get(item.id)?.likes || 0,

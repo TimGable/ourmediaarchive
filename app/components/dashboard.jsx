@@ -9,6 +9,8 @@ import { CategorySelector } from "./category-selector";
 import { Feed } from "./feed";
 import { InteractiveBackground } from "./interactive-background";
 import { AdminPanel } from "./admin-panel";
+import { CommunityAnnouncementsBoard } from "./community-announcements-board";
+import { GlobalUploadFlow } from "./global-upload-flow";
 import { usePublicAudio } from "./public-audio-context";
 import { SiteNavigation } from "./site-navigation";
 import { ViewportPortal } from "./viewport-portal";
@@ -77,11 +79,14 @@ export function Dashboard({ onSignOut }) {
   const viewHistoryRef = useRef([]);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isModerator, setIsModerator] = useState(false);
   const [forceProfileSetup, setForceProfileSetup] = useState(false);
   const [profileUsername, setProfileUsername] = useState("");
   const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
   const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [profileCategoryTags, setProfileCategoryTags] = useState([]);
   const [profileNavigationIntent, setProfileNavigationIntent] = useState("");
+  const [showGlobalUploadFlow, setShowGlobalUploadFlow] = useState(false);
   const {
     currentTrack,
     playbackQueue,
@@ -185,9 +190,11 @@ export function Dashboard({ onSignOut }) {
       if (!mounted) return;
 
       setIsAdmin(Boolean(payload?.profile?.isAdmin));
+      setIsModerator(Boolean(payload?.profile?.isModerator));
       setProfileUsername(payload?.profile?.username || "");
       setProfileAvatarUrl(payload?.profile?.avatarUrl || "");
       setProfileDisplayName(payload?.profile?.displayName || "");
+      setProfileCategoryTags(Array.isArray(payload?.profile?.categoryTags) ? payload.profile.categoryTags : []);
 
       const setupRequired = isGeneratedUsername(payload?.profile?.username);
       setForceProfileSetup(setupRequired);
@@ -414,6 +421,11 @@ export function Dashboard({ onSignOut }) {
   };
 
   const openOwnProfileSettings = () => {
+    if (currentView === "profile") {
+      setProfileNavigationIntent("settings");
+      return;
+    }
+
     if (forceProfileSetup || !profileUsername) {
       setProfileNavigationIntent("settings");
       navigateToView("profile");
@@ -425,14 +437,12 @@ export function Dashboard({ onSignOut }) {
   };
 
   const openOwnProfileUpload = () => {
-    if (forceProfileSetup || !profileUsername) {
+    if (currentView === "profile") {
       setProfileNavigationIntent("upload");
-      navigateToView("profile");
       return;
     }
 
-    rememberRootViewReturn(currentView);
-    router.push(`${buildPublicProfilePath(profileUsername)}#upload`);
+    setShowGlobalUploadFlow(true);
   };
 
   return (
@@ -444,9 +454,10 @@ export function Dashboard({ onSignOut }) {
         {/* Content */}
         <div className="relative z-10">
           <SiteNavigation
-            isAdmin={isAdmin}
+            canModerate={isAdmin || isModerator}
             onHome={canLeaveProfileSetup ? () => navigateToView("home") : undefined}
-            onAdmin={canLeaveProfileSetup && isAdmin ? () => navigateToView("admin") : undefined}
+            onAdmin={canLeaveProfileSetup && (isAdmin || isModerator) ? () => navigateToView("admin") : undefined}
+            onMyProfile={openOwnProfile}
             onUpload={openOwnProfileUpload}
             onAccountSettings={openOwnProfileSettings}
             onSignOut={() => setShowSignOutConfirm(true)}
@@ -471,15 +482,26 @@ export function Dashboard({ onSignOut }) {
                 {/* Welcome Header */}
                 <div className="text-center mb-8 md:mb-12">
                   <h2 className="text-3xl md:text-4xl mb-6">welcome</h2>
-                  <motion.button
-                    type="button"
-                    onClick={() => navigateToView('categories')}
-                    className="border border-white/40 px-5 py-3 text-sm tracking-wide transition-colors hover:border-white/60 hover:bg-white/10"
-                    whileHover={SOFT_BUTTON_HOVER}
-                    whileTap={SOFT_BUTTON_TAP}
-                  >
-                    browse artists
-                  </motion.button>
+                  <div className="flex flex-col items-center gap-3">
+                    <motion.button
+                      type="button"
+                      onClick={() => navigateToView('announcements')}
+                      className="border border-white/40 px-5 py-3 text-sm tracking-wide transition-colors hover:border-white/60 hover:bg-white/10"
+                      whileHover={SOFT_BUTTON_HOVER}
+                      whileTap={SOFT_BUTTON_TAP}
+                    >
+                      community announcements
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={() => navigateToView('categories')}
+                      className="border border-white/40 px-5 py-3 text-sm tracking-wide transition-colors hover:border-white/60 hover:bg-white/10"
+                      whileHover={SOFT_BUTTON_HOVER}
+                      whileTap={SOFT_BUTTON_TAP}
+                    >
+                      browse artists
+                    </motion.button>
+                  </div>
                 </div>
 
                 {/* Feed Section */}
@@ -511,6 +533,10 @@ export function Dashboard({ onSignOut }) {
                   goBackView('home');
                 }}
               />
+            )}
+
+            {currentView === 'announcements' && (
+              <CommunityAnnouncementsBoard onBack={() => goBackView('home')} />
             )}
 
             {currentView === 'browse-music' && (
@@ -553,7 +579,7 @@ export function Dashboard({ onSignOut }) {
               />
             )}
 
-            {currentView === 'admin' && isAdmin && (
+            {currentView === 'admin' && (isAdmin || isModerator) && (
               <AdminPanel onBack={() => goBackView('home')} />
             )}
               </motion.div>
@@ -622,6 +648,12 @@ export function Dashboard({ onSignOut }) {
           </motion.div>
         </ViewportPortal>
       )}
+
+      <GlobalUploadFlow
+        isOpen={showGlobalUploadFlow}
+        categoryTags={profileCategoryTags}
+        onClose={() => setShowGlobalUploadFlow(false)}
+      />
     </div>
   );
 }

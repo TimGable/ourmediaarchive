@@ -30,8 +30,6 @@ const VISIBILITY_OPTIONS = [
   { value: "private", label: "private" },
 ];
 
-const MAX_TRACKS_PER_RELEASE = 15;
-
 function fileNameToTitle(fileName) {
   return fileName
     .replace(/\.[^.]+$/, "")
@@ -50,42 +48,45 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
   const [trackTitles, setTrackTitles] = useState([]);
   const [coverArt, setCoverArt] = useState(null);
   const [coverArtDraft, setCoverArtDraft] = useState(null);
-  const [coverArtPreviewUrl, setCoverArtPreviewUrl] = useState("");
   const [error, setError] = useState("");
 
   const itemLabel = useMemo(() => LABEL_BY_KIND[mediaKind] || "file", [mediaKind]);
   const isMultiTrackMusic = mediaKind === "music" && releaseType !== "single";
+  const coverArtPreviewUrl = useMemo(
+    () => (coverArt ? URL.createObjectURL(coverArt) : ""),
+    [coverArt],
+  );
 
   useEffect(() => {
-    if (!isMultiTrackMusic) {
+    return () => {
+      if (coverArtPreviewUrl) {
+        URL.revokeObjectURL(coverArtPreviewUrl);
+      }
+    };
+  }, [coverArtPreviewUrl]);
+
+  const handleReleaseTypeChange = (nextReleaseType) => {
+    setReleaseType(nextReleaseType);
+    setError("");
+
+    if (nextReleaseType === "single") {
       setFiles([]);
       setTrackTitles([]);
+    } else {
+      setFile(null);
     }
-  }, [isMultiTrackMusic]);
-
-  useEffect(() => {
-    if (!coverArt) {
-      setCoverArtPreviewUrl("");
-      return undefined;
-    }
-
-    const nextPreviewUrl = URL.createObjectURL(coverArt);
-    setCoverArtPreviewUrl(nextPreviewUrl);
-
-    return () => {
-      URL.revokeObjectURL(nextPreviewUrl);
-    };
-  }, [coverArt]);
+  };
 
   const handleMusicFileSelection = (nextFiles) => {
-    const limitedFiles = nextFiles.slice(0, MAX_TRACKS_PER_RELEASE);
-    setFiles(limitedFiles);
-    setTrackTitles(limitedFiles.map((nextFile) => fileNameToTitle(nextFile.name)));
-    if (nextFiles.length > MAX_TRACKS_PER_RELEASE) {
-      setError(`EP and album uploads are limited to ${MAX_TRACKS_PER_RELEASE} tracks.`);
-    } else {
-      setError("");
-    }
+    setFiles(nextFiles);
+    setTrackTitles(nextFiles.map((nextFile) => fileNameToTitle(nextFile.name)));
+    setError("");
+  };
+
+  const handleRemoveSelectedTrack = (removeIndex) => {
+    setFiles((current) => current.filter((_, index) => index !== removeIndex));
+    setTrackTitles((current) => current.filter((_, index) => index !== removeIndex));
+    setError("");
   };
 
   const handleSubmit = async (event) => {
@@ -99,12 +100,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
 
     if (mediaKind === "music" && isMultiTrackMusic) {
       if (files.length === 0) {
-        setError(`Choose up to ${MAX_TRACKS_PER_RELEASE} audio files for this release.`);
-        return;
-      }
-
-      if (files.length > MAX_TRACKS_PER_RELEASE) {
-        setError(`EP and album uploads are limited to ${MAX_TRACKS_PER_RELEASE} tracks.`);
+        setError("Choose at least one audio file for this release.");
         return;
       }
 
@@ -113,16 +109,20 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
         return;
       }
 
-      await onSubmit({
-        mediaKind,
-        releaseType,
-        title: title.trim(),
-        description: description.trim(),
-        visibility,
-        files,
-        trackTitles: trackTitles.map((trackTitle) => trackTitle.trim()),
-        coverArt,
-      });
+      try {
+        await onSubmit({
+          mediaKind,
+          releaseType,
+          title: title.trim(),
+          description: description.trim(),
+          visibility,
+          files,
+          trackTitles: trackTitles.map((trackTitle) => trackTitle.trim()),
+          coverArt,
+        });
+      } catch (submitError) {
+        setError(submitError instanceof Error ? submitError.message : "Upload failed.");
+      }
       return;
     }
 
@@ -131,17 +131,21 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
       return;
     }
 
-    await onSubmit({
-      mediaKind,
-      releaseType: mediaKind === "music" ? releaseType : null,
-      title: title.trim(),
-      description: description.trim(),
-      visibility,
-      file,
-      files: file ? [file] : [],
-      trackTitles: title.trim() ? [title.trim()] : [],
-      coverArt,
-    });
+    try {
+      await onSubmit({
+        mediaKind,
+        releaseType: mediaKind === "music" ? releaseType : null,
+        title: title.trim(),
+        description: description.trim(),
+        visibility,
+        file,
+        files: file ? [file] : [],
+        trackTitles: title.trim() ? [title.trim()] : [],
+        coverArt,
+      });
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Upload failed.");
+    }
   };
 
   return (
@@ -158,12 +162,12 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
       }}
     >
       <motion.div
-        className="w-full max-w-xl border border-white/20 bg-black p-6 md:p-8"
+        className="flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden border border-white/20 bg-black p-6 md:p-8"
         {...SOFT_PANEL_REVEAL}
         transition={PAGE_TRANSITION}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="mb-6 flex flex-shrink-0 items-start justify-between gap-4">
           <div>
             <h3 className="text-2xl">upload {itemLabel}</h3>
             <p className="mt-2 text-sm text-gray-400">
@@ -183,7 +187,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
           </motion.button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="archive-scrollbar-thin min-h-0 space-y-5 overflow-y-auto pr-1">
           <div>
             <label className="mb-2 block text-sm text-gray-400">
               {isMultiTrackMusic ? "release title" : "title"}
@@ -217,21 +221,29 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
           {mediaKind === "music" && (
             <div>
               <label className="mb-2 block text-sm text-gray-400">release type</label>
-              <select
-                value={releaseType}
-                onChange={(event) => setReleaseType(event.target.value)}
-                className="w-full border border-white/20 bg-black px-4 py-3 text-white outline-none transition-colors focus:border-white/60"
-                disabled={isSubmitting}
-              >
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 {MUSIC_RELEASE_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
+                  <label
+                    key={option.value}
+                    className={`flex cursor-pointer items-center justify-between border px-4 py-3 text-sm uppercase tracking-[0.16em] transition-colors ${
+                      releaseType === option.value
+                        ? "border-white/50 bg-white/10 text-white"
+                        : "border-white/15 bg-white/[0.03] text-gray-400 hover:border-white/35 hover:text-white"
+                    }`}
+                  >
+                    <span>{option.label}</span>
+                    <input
+                      type="radio"
+                      name="musicReleaseType"
+                      value={option.value}
+                      checked={releaseType === option.value}
+                      onChange={(event) => handleReleaseTypeChange(event.target.value)}
+                      className="h-4 w-4 accent-white"
+                      disabled={isSubmitting}
+                    />
+                  </label>
                 ))}
-              </select>
-              <p className="mt-2 text-xs text-gray-500">
-                Tag this upload as a single, EP, or album for discovery and profile display.
-              </p>
+              </div>
             </div>
           )}
 
@@ -242,7 +254,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
                 <Upload className="h-5 w-5 text-gray-400" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-white">
-                    {coverArt ? coverArt.name : "choose cover art image"}
+                    choose file
                   </p>
                   <p className="mt-1 text-xs text-gray-500">
                     Optional. Use JPG, PNG, WEBP, GIF, or AVIF.
@@ -295,17 +307,11 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
               <Upload className="h-5 w-5 text-gray-400" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-white">
-                  {isMultiTrackMusic
-                    ? files.length > 0
-                      ? `${files.length} tracks selected`
-                      : `choose up to ${MAX_TRACKS_PER_RELEASE} tracks`
-                    : file
-                      ? file.name
-                      : `choose a ${itemLabel} file`}
+                  choose file
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
                   Accepted type: {ACCEPT_BY_KIND[mediaKind]}
-                  {isMultiTrackMusic ? `, maximum ${MAX_TRACKS_PER_RELEASE} tracks` : ""}
+                  {isMultiTrackMusic ? ", select multiple tracks for this release" : ""}
                 </p>
               </div>
               <input
@@ -332,12 +338,15 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
               <div className="mb-2 flex items-center justify-between gap-3">
                 <label className="block text-sm text-gray-400">track titles</label>
                 <span className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                  {files.length}/{MAX_TRACKS_PER_RELEASE}
+                  {files.length} tracks
                 </span>
               </div>
               <div className="space-y-3 border border-white/15 bg-white/[0.02] p-4">
                 {files.map((selectedFile, index) => (
-                  <div key={`${selectedFile.name}-${index}`} className="grid gap-2 md:grid-cols-[2rem_minmax(0,1fr)] md:items-center">
+                  <div
+                    key={`${selectedFile.name}-${index}`}
+                    className="grid gap-2 md:grid-cols-[2rem_minmax(0,1fr)_2.5rem] md:items-start"
+                  >
                     <span className="text-xs uppercase tracking-[0.18em] text-gray-500">
                       {index + 1}
                     </span>
@@ -358,6 +367,17 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
                       />
                       <p className="mt-1 truncate text-xs text-gray-500">{selectedFile.name}</p>
                     </div>
+                    <motion.button
+                      type="button"
+                      onClick={() => handleRemoveSelectedTrack(index)}
+                      disabled={isSubmitting}
+                      className="flex h-10 w-10 items-center justify-center border border-white/15 text-gray-400 transition-colors hover:border-white/40 hover:text-white disabled:opacity-50"
+                      aria-label={`Remove ${selectedFile.name}`}
+                      whileHover={SOFT_BUTTON_HOVER}
+                      whileTap={SOFT_BUTTON_TAP}
+                    >
+                      <X className="h-4 w-4" />
+                    </motion.button>
                   </div>
                 ))}
               </div>

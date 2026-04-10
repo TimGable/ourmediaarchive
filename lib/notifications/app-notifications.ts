@@ -1,6 +1,6 @@
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
-type NotificationType = "follow" | "like" | "comment";
+type NotificationType = "follow" | "like" | "comment" | "mention";
 
 type CreateNotificationInput = {
   recipientUserId: string;

@@ -4,6 +4,7 @@ import { Edit2, ListPlus, Music2, Palette, Pause, Play, Video } from "lucide-rea
 import { Waveform } from "./waveform";
 import { MediaSocialPanel } from "./media-social-panel";
 import { VisualGalleryLightbox } from "./visual-gallery-lightbox";
+import { MentionText } from "./mention-text";
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -84,6 +85,8 @@ export function MediaItemPage({
   );
 
   useEffect(() => {
+    // The lightbox is tied to the displayed item and must close when that item changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLightboxIndex(-1);
   }, [item.id]);
 
@@ -115,7 +118,7 @@ export function MediaItemPage({
             <h3 className="max-w-4xl text-3xl leading-tight md:text-5xl">{item.title}</h3>
             {item.description && (
               <p className="mt-4 max-w-3xl text-sm leading-relaxed text-gray-400 md:text-base">
-                {item.description}
+                <MentionText text={item.description} />
               </p>
             )}
           </div>

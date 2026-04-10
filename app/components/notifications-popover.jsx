@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Bell, Heart, MessageCircle, UserPlus } from "lucide-react";
+import { AtSign, Bell, Heart, MessageCircle, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { buildPublicMediaPath, buildPublicProfilePath } from "@/lib/media-slugs";
@@ -17,6 +17,10 @@ function getNotificationIcon(type) {
     return <MessageCircle className="h-4 w-4" />;
   }
 
+  if (type === "mention") {
+    return <AtSign className="h-4 w-4" />;
+  }
+
   return <Heart className="h-4 w-4" />;
 }
 
@@ -29,6 +33,10 @@ function getNotificationText(notification) {
 
   if (notification.type === "comment") {
     return `${actorName} commented on ${notification.media?.title || "your post"}`;
+  }
+
+  if (notification.type === "mention") {
+    return `${actorName} mentioned you${notification.media?.title ? ` on ${notification.media.title}` : ""}`;
   }
 
   return `${actorName} liked ${notification.media?.title || "your post"}`;
@@ -162,15 +170,15 @@ export function NotificationsPopover({ compact = false, onNavigate }) {
         type="button"
         onClick={() => setIsOpen((current) => !current)}
         className={`relative flex items-center justify-center border border-white/15 text-gray-400 transition-colors hover:border-white/40 hover:text-white ${
-          compact ? "h-11 w-11" : "h-10 w-10"
+          compact ? "h-12 w-12" : "h-11 w-11"
         }`}
         whileHover={SOFT_BUTTON_HOVER}
         whileTap={SOFT_BUTTON_TAP}
         aria-label="Open notifications"
       >
-        <Bell className="h-4 w-4" />
+        <Bell className="h-5 w-5" />
         {unreadCount > 0 ? (
-          <span className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full border border-black bg-red-500 px-1.5 text-center text-[10px] font-semibold leading-none text-white shadow-[0_0_18px_rgba(239,68,68,0.35)]">
+          <span className="absolute -right-1.5 -top-1.5 flex min-h-5.5 min-w-5.5 items-center justify-center rounded-full border border-black bg-red-500 px-1.5 text-center text-[10px] font-semibold leading-none text-white shadow-[0_0_18px_rgba(239,68,68,0.35)]">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}
@@ -212,7 +220,7 @@ export function NotificationsPopover({ compact = false, onNavigate }) {
 
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-white">{getNotificationText(notification)}</p>
-                      {notification.type === "comment" && notification.data?.bodyPreview ? (
+                      {(notification.type === "comment" || notification.type === "mention") && notification.data?.bodyPreview ? (
                         <p className="mt-1 line-clamp-2 text-xs text-gray-500">
                           {notification.data.bodyPreview}
                         </p>

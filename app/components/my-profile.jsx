@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useRouter } from "next/navigation";
-import { Upload, Edit2, Music, Palette, Video, Check } from "lucide-react";
+import { Upload, Edit2, Music, Palette, Video, Check, Trash2 } from "lucide-react";
 import { ChangePasswordModal } from "./change-password-modal";
 import { ArchiveLoadingState } from "./archive-loading-state";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { UploadContentModal } from "./upload-content-modal";
+import { UploadProgressModal } from "./upload-progress-modal";
 import { EditUploadModal } from "./edit-upload-modal";
 import { ImageCropModal } from "./image-crop-modal";
+import { UploadCategoryModal } from "./upload-category-modal";
 import { MediaItemPage } from "./media-item-page";
 import { VisualGalleryLightbox } from "./visual-gallery-lightbox";
 import { ProfileArchiveView } from "./profile-archive-view";
 import { ProfileConnectionsModal } from "./profile-connections-modal";
 import { attachPublicMediaSlugs, buildPublicMediaPath } from "@/lib/media-slugs";
 import { CONTENT_SWAP_ANIMATION, PAGE_TRANSITION, PROFILE_PANEL_SWAP_ANIMATION } from "@/lib/motion";
+import { uploadFormDataWithProgress } from "@/lib/upload-request";
 
 const PROFILE_DETAIL_HISTORY_KEY = "__omaProfileDetail";
 
@@ -23,6 +26,17 @@ function isGeneratedUsername(username) {
 
 function isValidEmailAddress(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+}
+
+function sortReleaseTracks(a, b) {
+  const firstTrackNumber = a.trackNumber ?? Number.MAX_SAFE_INTEGER;
+  const secondTrackNumber = b.trackNumber ?? Number.MAX_SAFE_INTEGER;
+
+  if (firstTrackNumber !== secondTrackNumber) {
+    return firstTrackNumber - secondTrackNumber;
+  }
+
+  return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
 }
 
 export function MyProfile({
@@ -50,6 +64,7 @@ export function MyProfile({
   const [loadingProgress, setLoadingProgress] = useState(12);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showUploadCategoryModal, setShowUploadCategoryModal] = useState(false);
   const [editingMediaItem, setEditingMediaItem] = useState(null);
   const [selectedMediaItem, setSelectedMediaItem] = useState(null);
   const [isNavigatingBack, setIsNavigatingBack] = useState(false);
@@ -59,8 +74,11 @@ export function MyProfile({
   const [uploadKind, setUploadKind] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isUpdatingMedia, setIsUpdatingMedia] = useState(false);
+  const [deleteAccountConfirmStep, setDeleteAccountConfirmStep] = useState(0);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deletingMediaItemId, setDeletingMediaItemId] = useState(null);
   const [profileNotice, setProfileNotice] = useState({ type: "", message: "" });
   const [contentNotice, setContentNotice] = useState({ type: "", message: "" });
@@ -92,17 +110,15 @@ export function MyProfile({
     username: profileData.username,
   };
 
-  const resolvePreferredUploadKind = () => {
-    if (profileData.categoryTags.includes("music")) {
-      return "music";
-    }
-    if (profileData.categoryTags.includes("visual")) {
-      return "visual";
-    }
-    if (profileData.categoryTags.includes("video")) {
-      return "video";
-    }
-    return null;
+  const openUploadCategoryPicker = () => {
+    setShowUploadCategoryModal(true);
+  };
+
+  const openUploadForKind = (mediaKind) => {
+    setContentNotice({ type: "", message: "" });
+    setShowUploadCategoryModal(false);
+    setUploadKind(mediaKind);
+    setShowUploadModal(true);
   };
 
   useEffect(() => {
@@ -153,13 +169,7 @@ export function MyProfile({
       }
 
       if (intent === "upload") {
-        const nextKind = resolvePreferredUploadKind();
-        if (nextKind) {
-          setUploadKind(nextKind);
-          setShowUploadModal(true);
-        } else {
-          setIsEditing(true);
-        }
+        openUploadCategoryPicker();
         return true;
       }
 
@@ -199,13 +209,7 @@ export function MyProfile({
     }
 
     if (navigationIntent === "upload") {
-      const nextKind = resolvePreferredUploadKind();
-      if (nextKind) {
-        setUploadKind(nextKind);
-        setShowUploadModal(true);
-      } else {
-        setIsEditing(true);
-      }
+      openUploadCategoryPicker();
       onNavigationIntentHandled?.();
     }
   }, [navigationIntent, onNavigationIntentHandled, profileData.categoryTags]);
@@ -468,6 +472,57 @@ export function MyProfile({
     setIsSaving(false);
   };
 
+  const handleDeleteAccount = async () => {
+    setProfileNotice({ type: "", message: "" });
+
+    if (deleteAccountConfirmStep < 1) {
+      setDeleteAccountConfirmStep(1);
+      setProfileNotice({
+        type: "error",
+        message: "Click delete account again to permanently remove your account and uploads.",
+      });
+      return;
+    }
+
+    setIsDeletingAccount(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setProfileNotice({ type: "error", message: "Session expired. Please sign in again." });
+        return;
+      }
+
+      const response = await fetch("/api/profile", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setProfileNotice({ type: "error", message: payload?.error || "Failed to delete account." });
+        return;
+      }
+
+      await supabase.auth.signOut();
+      if (typeof window !== "undefined") {
+        window.location.assign("/");
+      }
+    } catch (error) {
+      setProfileNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to delete account.",
+      });
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
   const categories = [
     { id: 'music', label: 'Music', icon: Music, description: 'audio releases & tracks' },
     { id: 'visual', label: 'Visual', icon: Palette, description: 'artwork & photography' },
@@ -475,9 +530,7 @@ export function MyProfile({
   ];
 
   const openUploadModal = (mediaKind) => {
-    setContentNotice({ type: "", message: "" });
-    setUploadKind(mediaKind);
-    setShowUploadModal(true);
+    openUploadForKind(mediaKind);
   };
 
   const openAvatarPicker = () => {
@@ -640,6 +693,7 @@ export function MyProfile({
     coverArt,
   }) => {
     setIsUploading(true);
+    setUploadProgress(1);
     setContentNotice({ type: "", message: "" });
 
     try {
@@ -677,22 +731,12 @@ export function MyProfile({
         body.append("coverArt", coverArt);
       }
 
-      const response = await fetch("/api/media", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+      const payload = await uploadFormDataWithProgress({
+        url: "/api/media",
+        token: session.access_token,
         body,
+        onProgress: setUploadProgress,
       });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setContentNotice({
-          type: "error",
-          message: payload?.error || "Upload failed.",
-        });
-        return;
-      }
 
       const newItems = Array.isArray(payload.items)
         ? payload.items
@@ -724,6 +768,7 @@ export function MyProfile({
       });
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -863,12 +908,15 @@ export function MyProfile({
     }
   };
 
-  const handlePlayMusicItem = (item) => {
+  const handlePlayMusicItem = (item, preferredQueueItems) => {
     if (!item?.asset?.url || !onPlayTrack) {
       return;
     }
 
-    onPlayTrack(item, artistIdentity, musicItems);
+    const releaseQueueItems = item.collectionId
+      ? musicItems.filter((musicItem) => musicItem.collectionId === item.collectionId).sort(sortReleaseTracks)
+      : musicItems;
+    onPlayTrack(item, artistIdentity, preferredQueueItems || releaseQueueItems);
   };
 
   const handleSeekMusicItem = (item, nextTime) => {
@@ -1145,7 +1193,7 @@ export function MyProfile({
                 </div>
 
                 {/* Profile Info */}
-                <motion.div className="flex-1 w-full" layout transition={PAGE_TRANSITION}>
+                <div className="flex-1 w-full">
                   {/* Username Field */}
                   <div className="mb-6">
                     <label className="block text-sm text-gray-400 mb-2">
@@ -1179,7 +1227,7 @@ export function MyProfile({
                     />
                   </div>
 
-                  <motion.div className="mb-6" layout transition={PAGE_TRANSITION}>
+                  <div className="mb-6">
                     <label className="block text-sm text-gray-400 mb-2">
                       account email
                       <span className="text-gray-500 ml-2 text-xs">(current sign-in address)</span>
@@ -1204,7 +1252,7 @@ export function MyProfile({
                         {isChangingEmail ? "cancel email change" : "change email"}
                       </button>
                     </div>
-                  </motion.div>
+                  </div>
 
                   <AnimatePresence initial={false}>
                     {isChangingEmail ? (
@@ -1260,7 +1308,7 @@ export function MyProfile({
                     ) : null}
                   </AnimatePresence>
 
-                  <motion.div className="mb-6" layout transition={PAGE_TRANSITION}>
+                  <div className="mb-6">
                     <label className="block text-sm text-gray-400 mb-2">bio</label>
                     <textarea
                       value={profileData.bio}
@@ -1269,9 +1317,9 @@ export function MyProfile({
                       rows={4}
                       className="w-full bg-transparent border border-white/20 px-4 py-3 focus:border-white/60 focus:outline-none transition-colors resize-none"
                     />
-                  </motion.div>
+                  </div>
 
-                </motion.div>
+                </div>
               </div>
 
               {/* Change Password */}
@@ -1394,6 +1442,36 @@ export function MyProfile({
                   ) : null}
                 </AnimatePresence>
               </div>
+
+              {!forceSetup ? (
+                <div className="border-t border-white/10 pt-6 mt-6">
+                  <div className="flex flex-col gap-4 border border-red-500/25 bg-red-500/[0.04] p-5 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h4 className="text-base text-white">delete account</h4>
+                      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-gray-400">
+                        Permanently removes your profile and every upload connected to it.
+                      </p>
+                    </div>
+                    <motion.button
+                      type="button"
+                      onClick={handleDeleteAccount}
+                      disabled={isDeletingAccount || isSaving}
+                      className="inline-flex items-center justify-center gap-2 border border-red-400/40 px-4 py-3 text-sm uppercase tracking-[0.16em] text-red-200 transition-colors hover:border-red-300/70 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>
+                        {isDeletingAccount
+                          ? "deleting..."
+                          : deleteAccountConfirmStep > 0
+                            ? "confirm delete"
+                            : "delete account"}
+                      </span>
+                    </motion.button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="flex gap-4 border-t border-white/10 pt-6 mt-6">
                 <motion.button
@@ -1556,21 +1634,33 @@ export function MyProfile({
         />
       )}
 
-      {editingMediaItem && (
-        <EditUploadModal
-          item={editingMediaItem}
-          isSubmitting={isUpdatingMedia}
-          isDeleting={deletingMediaItemId === editingMediaItem.id}
-          onClose={() => {
-            if (isUpdatingMedia || deletingMediaItemId === editingMediaItem.id) {
-              return;
-            }
-            setEditingMediaItem(null);
-          }}
-          onSave={handleSaveMediaItem}
-          onDelete={handleDeleteMediaItem}
+      {isUploading ? <UploadProgressModal progress={uploadProgress} /> : null}
+
+      {showUploadCategoryModal ? (
+        <UploadCategoryModal
+          categoryTags={profileData.categoryTags}
+          onClose={() => setShowUploadCategoryModal(false)}
+          onSelect={openUploadForKind}
         />
-      )}
+      ) : null}
+
+      <AnimatePresence>
+        {editingMediaItem ? (
+          <EditUploadModal
+            item={editingMediaItem}
+            isSubmitting={isUpdatingMedia}
+            isDeleting={deletingMediaItemId === editingMediaItem.id}
+            onClose={() => {
+              if (isUpdatingMedia || deletingMediaItemId === editingMediaItem.id) {
+                return;
+              }
+              setEditingMediaItem(null);
+            }}
+            onSave={handleSaveMediaItem}
+            onDelete={handleDeleteMediaItem}
+          />
+        ) : null}
+      </AnimatePresence>
 
       {avatarDraft ? (
         <ImageCropModal

@@ -89,7 +89,7 @@ export async function sendApprovedInviteLinkEmail(params: {
 
   const subject = "Your invite was approved - set your password";
   const text = [
-    "Your invite request for Our Media Archive has been approved.",
+    "Your invite request for Splotch has been approved.",
     "",
     "Use the secure link below to create your password and activate your account:",
     params.actionLink,
@@ -115,7 +115,7 @@ export async function sendDeniedInviteEmail(params: {
 
   const subject = "Your invite request was not approved";
   const text = [
-    "Thanks for your interest in Our Media Archive.",
+    "Thanks for your interest in Splotch.",
     "",
     "At this time, your invite request was not approved.",
     "",

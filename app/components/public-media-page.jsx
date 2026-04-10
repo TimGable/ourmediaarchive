@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence } from "motion/react";
 import { Edit2, ListPlus, Music2, Pause, Play, Palette, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Waveform } from "./waveform";
@@ -9,6 +10,7 @@ import { usePublicAudio } from "./public-audio-context";
 import { MediaSocialPanel } from "./media-social-panel";
 import { VisualGalleryLightbox } from "./visual-gallery-lightbox";
 import { EditUploadModal } from "./edit-upload-modal";
+import { MentionText } from "./mention-text";
 import { buildPublicMediaPath, buildPublicProfilePath } from "@/lib/media-slugs";
 import { createSupabaseBrowserClient, getStoredSupabaseUserId } from "@/lib/supabase/client";
 
@@ -58,6 +60,26 @@ function formatUploadDate(value) {
   return new Date(value).toLocaleDateString();
 }
 
+function formatFileSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function sortReleaseTracks(a, b) {
+  const firstTrackNumber = a.trackNumber ?? Number.MAX_SAFE_INTEGER;
+  const secondTrackNumber = b.trackNumber ?? Number.MAX_SAFE_INTEGER;
+
+  if (firstTrackNumber !== secondTrackNumber) {
+    return firstTrackNumber - secondTrackNumber;
+  }
+
+  return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+}
+
 export function PublicMediaPage({ profile, item, publicItems }) {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -88,9 +110,30 @@ export function PublicMediaPage({ profile, item, publicItems }) {
   const progress = displayedDuration > 0 ? displayedCurrentTime / displayedDuration : 0;
   const relatedItems = displayedPublicItems.filter((entry) => entry.id !== displayedItem.id).slice(0, 4);
   const [lightboxIndex, setLightboxIndex] = useState(-1);
+  const collectionTracks = useMemo(() => {
+    if (
+      displayedItem.mediaKind !== "music" ||
+      !displayedItem.collectionId ||
+      displayedItem.releaseType === "single"
+    ) {
+      return [];
+    }
+
+    const tracksById = new Map();
+    tracksById.set(displayedItem.id, displayedItem);
+    for (const entry of displayedPublicItems) {
+      if (entry.collectionId === displayedItem.collectionId && entry.mediaKind === "music") {
+        tracksById.set(entry.id, entry);
+      }
+    }
+
+    return [...tracksById.values()].sort(sortReleaseTracks);
+  }, [displayedItem, displayedPublicItems]);
   const musicItems =
     displayedItem.mediaKind === "music" && displayedItem.asset?.url
-      ? [
+      ? collectionTracks.length > 1
+        ? collectionTracks
+        : [
           displayedItem,
           ...displayedPublicItems.filter(
             (entry) => entry.id !== displayedItem.id && entry.mediaKind === "music" && entry.asset?.url,
@@ -203,12 +246,20 @@ export function PublicMediaPage({ profile, item, publicItems }) {
     playTrack(displayedItem, profile, musicItems);
   };
 
+  const handlePlayReleaseTrack = (track) => {
+    playTrack(track, profile, musicItems);
+  };
+
   const handleSeek = (nextTime) => {
     seekTrack(nextTime);
   };
 
   const handleAddToQueue = () => {
     addTrackToQueue(displayedItem, profile, musicItems);
+  };
+
+  const handleAddReleaseTrackToQueue = (track) => {
+    addTrackToQueue(track, profile, musicItems);
   };
 
   const handleSaveMediaItem = async ({ id, title, description, visibility, coverArt }) => {
@@ -345,7 +396,7 @@ export function PublicMediaPage({ profile, item, publicItems }) {
             </Link>
             {displayedItem.description && (
               <p className="mt-4 max-w-3xl text-sm leading-relaxed text-gray-400 md:text-base">
-                {displayedItem.description}
+                <MentionText text={displayedItem.description} />
               </p>
             )}
           </div>
@@ -448,6 +499,64 @@ export function PublicMediaPage({ profile, item, publicItems }) {
                       </div>
                     </div>
                   </div>
+
+                  {collectionTracks.length > 1 ? (
+                    <div className="mt-6 border-t border-white/10 pt-4">
+                      <div className="mb-3 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-gray-500">
+                        <span>{collectionTracks.length} tracks</span>
+                        <span>{displayedItem.collectionTitle || displayedItem.title}</span>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {collectionTracks.map((track, index) => {
+                          const isReleaseTrackActive = currentTrack?.track?.id === track.id;
+                          const isReleaseTrackPlaying = isReleaseTrackActive && isPlaying;
+
+                          return (
+                            <div
+                              key={track.id}
+                              className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border border-white/10 bg-black/20 px-3 py-2.5"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handlePlayReleaseTrack(track)}
+                                disabled={!track.asset?.url}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/[0.03] transition-colors hover:border-white/45 disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label={`${isReleaseTrackPlaying ? "Pause" : "Play"} ${track.title}`}
+                              >
+                                {isReleaseTrackPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="ml-0.5 h-3.5 w-3.5" />}
+                              </button>
+
+                              <Link
+                                href={buildPublicMediaPath(profile.username, track.slug)}
+                                className="min-w-0 transition-colors hover:text-gray-300"
+                              >
+                                <span className="block truncate text-sm">
+                                  {track.trackNumber || index + 1}. {track.title}
+                                </span>
+                                <span className="mt-0.5 block truncate text-[11px] uppercase tracking-[0.14em] text-gray-500">
+                                  {track.asset?.fileName || track.asset?.mimeType || "audio"}
+                                </span>
+                              </Link>
+
+                              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-gray-500">
+                                {track.asset?.fileSizeBytes ? <span>{formatFileSize(track.asset.fileSizeBytes)}</span> : null}
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddReleaseTrackToQueue(track)}
+                                  disabled={!track.asset?.url}
+                                  className="inline-flex items-center gap-1 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  aria-label={`Add ${track.title} to queue`}
+                                >
+                                  <ListPlus className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
 
                 </div>
               </div>
@@ -562,16 +671,18 @@ export function PublicMediaPage({ profile, item, publicItems }) {
         }
       />
 
-      {isOwnerView && editingMediaItem ? (
-        <EditUploadModal
-          item={editingMediaItem}
-          isSubmitting={isUpdatingMedia}
-          isDeleting={deletingMediaItemId === editingMediaItem.id}
-          onClose={() => setEditingMediaItem(null)}
-          onSave={handleSaveMediaItem}
-          onDelete={handleDeleteMediaItem}
-        />
-      ) : null}
+      <AnimatePresence>
+        {isOwnerView && editingMediaItem ? (
+          <EditUploadModal
+            item={editingMediaItem}
+            isSubmitting={isUpdatingMedia}
+            isDeleting={deletingMediaItemId === editingMediaItem.id}
+            onClose={() => setEditingMediaItem(null)}
+            onSave={handleSaveMediaItem}
+            onDelete={handleDeleteMediaItem}
+          />
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
+import { ArchiveLoadingState } from "./archive-loading-state";
 import { ImageWithFallback } from "./figma/ImageWithFallback.tsx";
 import {
   PAGE_TRANSITION,
@@ -85,7 +86,7 @@ export function BrowseCategoryArtists({ category, onArtistClick, onBack }) {
     >
       <motion.button
         onClick={onBack}
-        className="mb-6 md:mb-8 text-gray-400 hover:text-white transition-colors relative group inline-block touch-manipulation"
+        className="mb-6 text-gray-400 transition-colors hover:text-white relative group inline-block touch-manipulation md:mb-8"
         whileHover={{ x: -3, ...SOFT_BUTTON_HOVER }}
         whileTap={SOFT_BUTTON_TAP}
       >
@@ -99,7 +100,7 @@ export function BrowseCategoryArtists({ category, onArtistClick, onBack }) {
         />
       </motion.button>
 
-      <div className="border border-white/20 p-6 md:p-12 mb-12">
+      <div className="mb-12 px-1">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-3xl md:text-4xl mb-2">{copy.title}</h2>
@@ -119,11 +120,7 @@ export function BrowseCategoryArtists({ category, onArtistClick, onBack }) {
         </div>
       )}
 
-      {isLoading && (
-        <div className="mb-6 border border-white/20 bg-white/5 px-4 py-3 text-sm text-gray-400">
-          loading artists...
-        </div>
-      )}
+      {isLoading && <ArchiveLoadingState />}
 
       {!isLoading && !error && artists.length === 0 && (
         <motion.div

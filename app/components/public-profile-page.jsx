@@ -37,6 +37,17 @@ function createProfileQueueEntry(item, artist) {
   };
 }
 
+function sortReleaseTracks(a, b) {
+  const firstTrackNumber = a.trackNumber ?? Number.MAX_SAFE_INTEGER;
+  const secondTrackNumber = b.trackNumber ?? Number.MAX_SAFE_INTEGER;
+
+  if (firstTrackNumber !== secondTrackNumber) {
+    return firstTrackNumber - secondTrackNumber;
+  }
+
+  return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+}
+
 export function PublicProfilePage({ profile, items, likedTracks = [] }) {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -47,6 +58,9 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
   const [followingCount, setFollowingCount] = useState(profile.followingCount || 0);
   const [canFollow, setCanFollow] = useState(true);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [isViewerAdmin, setIsViewerAdmin] = useState(false);
+  const [isTargetModerator, setIsTargetModerator] = useState(Boolean(profile.isModerator));
+  const [isUpdatingModerator, setIsUpdatingModerator] = useState(false);
   const [isUpdatingFollow, setIsUpdatingFollow] = useState(false);
   const [isNavigatingBack, setIsNavigatingBack] = useState(false);
   const [lightboxState, setLightboxState] = useState({ kind: "", index: -1 });
@@ -145,6 +159,7 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
 
         const profilePayload = await profileResponse.json().catch(() => ({}));
         const isOwnProfile = profilePayload?.profile?.userId === profile.userId;
+        setIsViewerAdmin(Boolean(profilePayload?.profile?.isAdmin));
         setIsOwnProfile(isOwnProfile);
         setCanFollow(!isOwnProfile);
 
@@ -183,8 +198,49 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
     };
   }, [profile.userId, supabase]);
 
-  const handlePlayTrack = (item) => {
-    playTrack(item, profile, musicItems);
+  const handleModeratorToggle = async () => {
+    if (isUpdatingModerator) {
+      return;
+    }
+
+    setIsUpdatingModerator(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        showNotice("error", "Sign in to manage moderators.");
+        return;
+      }
+
+      const response = await fetch(`/api/admin/moderators/${profile.userId}`, {
+        method: isTargetModerator ? "DELETE" : "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showNotice("error", payload?.error || "Failed to update moderator role.");
+        return;
+      }
+
+      const nextValue = Boolean(payload?.isModerator);
+      setIsTargetModerator(nextValue);
+      showNotice("success", nextValue ? "User promoted to moderator." : "Moderator role removed.");
+    } finally {
+      setIsUpdatingModerator(false);
+    }
+  };
+
+  const handlePlayTrack = (item, preferredQueueItems) => {
+    const releaseQueueItems = item.collectionId
+      ? musicItems.filter((musicItem) => musicItem.collectionId === item.collectionId).sort(sortReleaseTracks)
+      : musicItems;
+    playTrack(item, profile, preferredQueueItems || releaseQueueItems);
   };
 
   const handleAddToQueue = (item) => {
@@ -499,13 +555,37 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
               isFollowing={isFollowing}
               isUpdatingFollow={isUpdatingFollow}
               onFollowToggle={handleFollowToggle}
+              headerTopRight={
+                isViewerAdmin && !isOwnProfile && !profile.isAdmin ? (
+                  <motion.button
+                    type="button"
+                    onClick={handleModeratorToggle}
+                    disabled={isUpdatingModerator}
+                    className={`border px-4 py-2 text-xs uppercase tracking-[0.18em] transition-colors disabled:opacity-50 ${
+                      isTargetModerator
+                        ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200 hover:border-emerald-300/60"
+                        : "border-white/20 bg-white/5 text-white hover:border-white/40 hover:bg-white/10"
+                    }`}
+                    whileHover={SOFT_BUTTON_HOVER}
+                    whileTap={SOFT_BUTTON_TAP}
+                  >
+                    {isUpdatingModerator
+                      ? "updating..."
+                      : isTargetModerator
+                        ? "remove moderator"
+                        : "promote to moderator"}
+                  </motion.button>
+                ) : null
+              }
               headerBottomRight={
-                <LikedTracksPanel
-                  likedTracks={likedTracks}
-                  onOpenTrack={(track) =>
-                    router.push(buildPublicMediaPath(track.artist.username, track.slug))
-                  }
-                />
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <LikedTracksPanel
+                    likedTracks={likedTracks}
+                    onOpenTrack={(track) =>
+                      router.push(buildPublicMediaPath(track.artist.username, track.slug))
+                    }
+                  />
+                </div>
               }
             />
 

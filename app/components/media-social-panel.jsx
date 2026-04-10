@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { Heart, MessageCircle, Trash2 } from "lucide-react";
+import { MentionText } from "./mention-text";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { PAGE_TRANSITION, SOFT_BUTTON_HOVER, SOFT_BUTTON_TAP, SOFT_PANEL_REVEAL } from "@/lib/motion";
 
@@ -341,8 +342,8 @@ export function MediaSocialPanel({
                     ) : null}
                   </div>
 
-                  <p className="text-sm leading-relaxed text-gray-300">
-                    {comment.isDeleted ? "comment removed" : comment.body}
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-300">
+                    {comment.isDeleted ? "comment removed" : <MentionText text={comment.body} />}
                   </p>
                 </motion.div>
               ))}

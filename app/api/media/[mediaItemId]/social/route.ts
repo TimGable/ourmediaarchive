@@ -8,6 +8,7 @@ import {
   createAppNotification,
   deleteAppNotification,
 } from "@/lib/notifications/app-notifications";
+import { createMentionNotifications } from "@/lib/mentions";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 const MAX_COMMENT_LENGTH = 1000;
@@ -380,6 +381,21 @@ export async function POST(
         });
       } catch (notificationError) {
         console.error("Failed to create comment notification:", notificationError);
+      }
+
+      try {
+        await createMentionNotifications({
+          supabase: access.supabase,
+          actorUserId: access.currentUserId,
+          body: commentBody,
+          mediaItemId,
+          commentId: insertedComment?.id ?? null,
+          data: {
+            source: "media_comment",
+          },
+        });
+      } catch (notificationError) {
+        console.error("Failed to create mention notification:", notificationError);
       }
 
       const payload = await buildSocialPayload(

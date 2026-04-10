@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { usePathname, useRouter } from "next/navigation";
 import { InteractiveBackground } from "./interactive-background";
 import { SiteNavigation } from "./site-navigation";
+import { GlobalUploadFlow } from "./global-upload-flow";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { buildPublicProfilePath } from "@/lib/media-slugs";
 import { rememberCurrentPathReturn } from "@/lib/public-navigation";
@@ -20,10 +21,13 @@ export function PublicRouteShell({ children }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isModerator, setIsModerator] = useState(false);
   const [profileUsername, setProfileUsername] = useState("");
   const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
   const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [profileCategoryTags, setProfileCategoryTags] = useState([]);
   const [forceProfileSetup, setForceProfileSetup] = useState(false);
+  const [showGlobalUploadFlow, setShowGlobalUploadFlow] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -41,7 +45,9 @@ export function PublicRouteShell({ children }) {
 
       if (!session?.access_token) {
         setIsAdmin(false);
+        setIsModerator(false);
         setProfileUsername("");
+        setProfileCategoryTags([]);
         setForceProfileSetup(false);
         return;
       }
@@ -62,9 +68,11 @@ export function PublicRouteShell({ children }) {
       }
 
       setIsAdmin(Boolean(payload?.profile?.isAdmin));
+      setIsModerator(Boolean(payload?.profile?.isModerator));
       setProfileUsername(payload?.profile?.username || "");
       setProfileAvatarUrl(payload?.profile?.avatarUrl || "");
       setProfileDisplayName(payload?.profile?.displayName || "");
+      setProfileCategoryTags(Array.isArray(payload?.profile?.categoryTags) ? payload.profile.categoryTags : []);
       setForceProfileSetup(isGeneratedUsername(payload?.profile?.username));
     }
 
@@ -97,11 +105,18 @@ export function PublicRouteShell({ children }) {
       return;
     }
 
+    const targetPath = buildPublicProfilePath(profileUsername);
+    if (pathname === targetPath && typeof window !== "undefined") {
+      rememberCurrentPathReturn();
+      window.location.hash = "settings";
+      return;
+    }
+
     rememberCurrentPathReturn();
-    router.push(`${buildPublicProfilePath(profileUsername)}#settings`);
+    router.push(`${targetPath}#settings`);
   };
 
-  const handleUpload = () => {
+  const handleMyProfile = () => {
     if (!isSignedIn) {
       router.push("/");
       return;
@@ -113,7 +128,16 @@ export function PublicRouteShell({ children }) {
     }
 
     rememberCurrentPathReturn();
-    router.push(`${buildPublicProfilePath(profileUsername)}#upload`);
+    router.push(buildPublicProfilePath(profileUsername));
+  };
+
+  const handleUpload = () => {
+    if (!isSignedIn) {
+      router.push("/");
+      return;
+    }
+
+    setShowGlobalUploadFlow(true);
   };
 
   const handleAdmin = () => {
@@ -132,11 +156,12 @@ export function PublicRouteShell({ children }) {
 
         <div className="relative z-10">
           <SiteNavigation
-            isAdmin={isSignedIn && isAdmin}
+            canModerate={isSignedIn && (isAdmin || isModerator)}
             onHome={handleHome}
+            onMyProfile={isSignedIn ? handleMyProfile : undefined}
             onUpload={isSignedIn ? handleUpload : undefined}
             onAccountSettings={isSignedIn ? handleAccountSettings : undefined}
-            onAdmin={isSignedIn && isAdmin ? handleAdmin : undefined}
+            onAdmin={isSignedIn && (isAdmin || isModerator) ? handleAdmin : undefined}
             onSignOut={isSignedIn ? handleSignOut : undefined}
             profileAvatarUrl={profileAvatarUrl}
             profileDisplayName={profileDisplayName}
@@ -155,6 +180,12 @@ export function PublicRouteShell({ children }) {
           </AnimatePresence>
         </div>
       </div>
+
+      <GlobalUploadFlow
+        isOpen={showGlobalUploadFlow}
+        categoryTags={profileCategoryTags}
+        onClose={() => setShowGlobalUploadFlow(false)}
+      />
     </div>
   );
 }

@@ -3,6 +3,8 @@
 import { motion } from "motion/react";
 import { Edit2, Heart, MessageCircle, Music, Palette, Plus, Video } from "lucide-react";
 import { MusicReleasePlayer } from "./music-release-player";
+import { MultiTrackReleaseCard } from "./multi-track-release-card";
+import { MentionText } from "./mention-text";
 import { PAGE_TRANSITION, SOFT_BUTTON_HOVER, SOFT_BUTTON_TAP, SOFT_CARD_HOVER } from "@/lib/motion";
 
 function groupItems(items) {
@@ -31,6 +33,74 @@ function formatFileSize(bytes) {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isMultiTrackReleaseItem(item) {
+  return item.mediaKind === "music" && item.collectionId && item.releaseType && item.releaseType !== "single";
+}
+
+function cleanReleaseDescription(description) {
+  return String(description || "").replace(/^From (EP|Album) ".*?"\.\s*/i, "");
+}
+
+function sortReleaseTracks(a, b) {
+  const firstTrackNumber = a.trackNumber ?? Number.MAX_SAFE_INTEGER;
+  const secondTrackNumber = b.trackNumber ?? Number.MAX_SAFE_INTEGER;
+
+  if (firstTrackNumber !== secondTrackNumber) {
+    return firstTrackNumber - secondTrackNumber;
+  }
+
+  return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+}
+
+function buildReleaseSummary(group) {
+  const tracks = [...group.tracks].sort(sortReleaseTracks);
+  const firstTrack = tracks[0];
+
+  return {
+    id: group.collectionId,
+    collectionId: group.collectionId,
+    title: firstTrack?.collectionTitle || firstTrack?.title || "untitled release",
+    description: cleanReleaseDescription(firstTrack?.description),
+    releaseType: firstTrack?.releaseType,
+    visibility: firstTrack?.visibility,
+    coverAsset: tracks.find((track) => track.coverAsset?.url)?.coverAsset || null,
+    createdAt: tracks[0]?.publishedAt || tracks[0]?.createdAt,
+    tracks,
+    likes: tracks.reduce((total, track) => total + (track.likes || 0), 0),
+    comments: tracks.reduce((total, track) => total + (track.comments || 0), 0),
+  };
+}
+
+function buildMusicDisplayEntries(items) {
+  const entries = [];
+  const releasesByCollectionId = new Map();
+
+  for (const item of items) {
+    if (!isMultiTrackReleaseItem(item)) {
+      entries.push({ kind: "single", id: item.id, item });
+      continue;
+    }
+
+    let releaseGroup = releasesByCollectionId.get(item.collectionId);
+    if (!releaseGroup) {
+      releaseGroup = {
+        collectionId: item.collectionId,
+        tracks: [],
+      };
+      releasesByCollectionId.set(item.collectionId, releaseGroup);
+      entries.push({ kind: "release", id: item.collectionId, releaseGroup });
+    }
+
+    releaseGroup.tracks.push(item);
+  }
+
+  return entries.map((entry) =>
+    entry.kind === "release"
+      ? { kind: "release", id: entry.id, release: buildReleaseSummary(entry.releaseGroup) }
+      : entry,
+  );
 }
 
 function CountButton({ value, label, onClick }) {
@@ -95,12 +165,14 @@ export function ProfileArchiveView({
   isUpdatingFollow = false,
   onFollowToggle,
   headerActions = null,
+  headerTopRight = null,
   headerBottomRight = null,
   onOpenVisual,
   onOpenVideo,
   emptyCategoryPrompt = null,
 }) {
   const groupedItems = groupItems(items);
+  const musicDisplayEntries = buildMusicDisplayEntries(groupedItems.music);
   const avatarFallback = (profile.displayName || profile.username || "?").charAt(0).toUpperCase();
   const categoryMeta = {
     music: { label: "Music", icon: Music },
@@ -127,6 +199,9 @@ export function ProfileArchiveView({
           </div>
 
           <div className="flex-1">
+            {headerTopRight ? (
+              <div className="mb-4 flex justify-end">{headerTopRight}</div>
+            ) : null}
             <p className="mb-3 cursor-default select-none text-[11px] uppercase tracking-[0.22em] text-gray-500">
               {headerLabel}
             </p>
@@ -171,7 +246,7 @@ export function ProfileArchiveView({
 
             {profile.bio ? (
               <p className="mt-6 max-w-3xl cursor-default select-none text-sm leading-relaxed text-gray-300 md:text-base">
-                {profile.bio}
+                <MentionText text={profile.bio} />
               </p>
             ) : null}
 
@@ -261,25 +336,42 @@ export function ProfileArchiveView({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-6">
-                    {groupedItems.music.map((item) => (
-                      <MusicReleasePlayer
-                        key={item.id}
-                        item={item}
-                        isActive={currentTrackId === item.id}
-                        isPlaying={isPlaying}
-                        onOpen={onOpenItem}
-                        onPlayPause={onPlayTrack}
-                        onAddToQueue={onAddToQueue}
-                        onShare={onShare}
-                        onEdit={isOwner ? onEditItem : undefined}
-                        currentTime={currentTrackId === item.id ? currentTime : 0}
-                        duration={currentTrackId === item.id ? duration : 0}
-                        onSeek={currentTrackId === item.id ? (nextTime) => onSeekTrack?.(item, nextTime) : undefined}
-                        formatFileSize={formatFileSize}
-                        formatUploadDate={formatUploadDate}
-                        formatReleaseType={formatReleaseType}
-                      />
-                    ))}
+                    {musicDisplayEntries.map((entry) =>
+                      entry.kind === "release" ? (
+                        <MultiTrackReleaseCard
+                          key={entry.id}
+                          release={entry.release}
+                          activeTrackId={currentTrackId}
+                          isPlaying={isPlaying}
+                          onOpen={onOpenItem}
+                          onPlayTrack={onPlayTrack}
+                          onAddTrackToQueue={onAddToQueue}
+                          onOpenComments={onOpenItem}
+                          onEditRelease={isOwner ? onEditItem : undefined}
+                          formatFileSize={formatFileSize}
+                          formatUploadDate={formatUploadDate}
+                          maxTrackListHeight="max-h-52"
+                        />
+                      ) : (
+                        <MusicReleasePlayer
+                          key={entry.item.id}
+                          item={entry.item}
+                          isActive={currentTrackId === entry.item.id}
+                          isPlaying={isPlaying}
+                          onOpen={onOpenItem}
+                          onPlayPause={onPlayTrack}
+                          onAddToQueue={onAddToQueue}
+                          onShare={onShare}
+                          onEdit={isOwner ? onEditItem : undefined}
+                          currentTime={currentTrackId === entry.item.id ? currentTime : 0}
+                          duration={currentTrackId === entry.item.id ? duration : 0}
+                          onSeek={currentTrackId === entry.item.id ? (nextTime) => onSeekTrack?.(entry.item, nextTime) : undefined}
+                          formatFileSize={formatFileSize}
+                          formatUploadDate={formatUploadDate}
+                          formatReleaseType={formatReleaseType}
+                        />
+                      ),
+                    )}
                   </div>
                 )}
               </section>
@@ -382,7 +474,9 @@ export function ProfileArchiveView({
                         </div>
 
                         {item.description ? (
-                          <p className="cursor-default select-none text-sm leading-relaxed text-gray-400">{item.description}</p>
+                          <p className="cursor-default select-none text-sm leading-relaxed text-gray-400">
+                            <MentionText text={item.description} />
+                          </p>
                         ) : null}
                       </motion.div>
                     ))}
@@ -486,7 +580,9 @@ export function ProfileArchiveView({
                         </div>
 
                         {item.description ? (
-                          <p className="cursor-default select-none text-sm leading-relaxed text-gray-400">{item.description}</p>
+                          <p className="cursor-default select-none text-sm leading-relaxed text-gray-400">
+                            <MentionText text={item.description} />
+                          </p>
                         ) : null}
                       </motion.div>
                     ))}
