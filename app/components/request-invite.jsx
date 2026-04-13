@@ -111,7 +111,7 @@ export function RequestInvite({ onBack }) {
                       value={message}
                       onChange={(event) => setMessage(event.target.value)}
                       className="min-h-48 w-full resize-none border border-white/20 bg-transparent px-4 py-3 text-base text-white outline-none transition-colors hover:border-white/40 focus:border-white/60"
-                      placeholder="Share what you make, what kind of archive presence you want, or why this platform fits your work."
+                      placeholder="Tell us about yourself"
                       required
                       disabled={isSubmitting}
                     />

@@ -166,18 +166,25 @@ export async function GET(request: Request) {
     const assetRows = assets;
     const thumbnailRows = thumbnails ?? [];
 
-    const signedAssetEntries = await Promise.all(
-      assetRows.map(async (asset) => [
-        asset.id,
-        await createSignedAssetUrl(supabase, asset.bucket, asset.object_key),
-      ]),
-    );
-    const signedThumbnailEntries = await Promise.all(
-      thumbnailRows.map(async (asset) => [
-        asset.media_item_id,
-        await createSignedAssetUrl(supabase, asset.bucket, asset.object_key),
-      ]),
-    );
+    const signedAssetEntries = (
+      await Promise.all(
+        assetRows.map(async (asset) => {
+          const url = await createSignedAssetUrl(supabase, asset.bucket, asset.object_key);
+          return [asset.id, url] as [string, string | null];
+        }),
+      )
+    ).filter((entry): entry is [string, string | null] => Boolean(entry?.[0]));
+    const signedThumbnailEntries = (
+      await Promise.all(
+        thumbnailRows.map(async (asset) => {
+          if (!asset.media_item_id) {
+            return null;
+          }
+          const url = await createSignedAssetUrl(supabase, asset.bucket, asset.object_key);
+          return [asset.media_item_id, url] as [string, string | null];
+        }),
+      )
+    ).filter((entry): entry is [string, string | null] => Boolean(entry));
 
     const assetUrlById = new Map<string, string | null>(signedAssetEntries);
     const thumbnailUrlByItemId = new Map<string, string | null>(signedThumbnailEntries);

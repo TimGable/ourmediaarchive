@@ -11,7 +11,7 @@ function SearchResultRow({ icon, title, subtitle, previewUrl, onClick }) {
     <motion.button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-white/10 hover:bg-white/[0.04]"
+      className="flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-white/10 hover:bg-white/[0.04]"
       whileHover={SOFT_BUTTON_HOVER}
       whileTap={SOFT_BUTTON_TAP}
     >
@@ -152,9 +152,13 @@ export function SiteSearch({ className = "", compact = false }) {
       <AnimatePresence>
         {isOpen && trimmedQuery.length >= 2 ? (
           <motion.div
-            className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-[1.65rem] border border-white/10 bg-black/95 p-3 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+            className="pointer-events-auto absolute left-0 right-0 top-[calc(100%+0.75rem)] z-[9999] overflow-hidden rounded-[1.65rem] border border-white/10 bg-black p-3 shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
             {...SOFT_PANEL_REVEAL}
             transition={PAGE_TRANSITION}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
           >
             {isLoading ? (
               <div className="px-3 py-6 text-sm text-gray-400">searching...</div>

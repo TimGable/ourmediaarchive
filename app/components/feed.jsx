@@ -5,6 +5,7 @@ import { ArchiveLoadingState } from "./archive-loading-state";
 import { MusicReleasePlayer } from "./music-release-player";
 import { MultiTrackReleaseCard } from "./multi-track-release-card";
 import { MentionText } from "./mention-text";
+import { VideoPlayer } from "./video-player";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -411,7 +412,7 @@ export function Feed({
         <div className="border border-white/20 bg-white/5 px-4 py-3 text-sm text-gray-300">
           discovery mix
           <span className="ml-2 text-gray-500">
-            you are not following anyone yet, so the feed is pulling a rotating selection from across the archive.
+            you are not following anyone yet, so the feed is pulling a rotating selection from across the website.
           </span>
         </div>
       ) : null}
@@ -568,38 +569,40 @@ export function Feed({
                   </div>
 
                   <div className="mx-auto w-full max-w-[16rem] sm:max-w-[18rem]">
-                    <motion.button
-                      type="button"
-                      onClick={() => onOpenItem?.(item)}
-                      className="group block w-full cursor-pointer overflow-hidden border border-white/10 bg-black text-left transition-colors hover:border-white/30"
-                      whileHover={SOFT_CARD_HOVER}
-                      whileTap={SOFT_BUTTON_TAP}
-                    >
-                      {item.mediaKind === "video" ? (
-                        item.asset?.url ? (
-                          <video
-                            muted
-                            playsInline
-                            preload="metadata"
-                            className="aspect-square w-full bg-black object-cover object-center"
-                          >
-                            <source src={item.asset.url} type={item.asset.mimeType} />
-                          </video>
-                        ) : (
-                          <div className="aspect-square w-full bg-white/5" />
-                        )
-                      ) : previewUrl ? (
-                        <img
-                          src={previewUrl}
-                          alt={item.title}
-                          className="aspect-square w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
+                    {item.mediaKind === "video" ? (
+                      item.asset?.url ? (
+                        <VideoPlayer
+                          src={item.asset.url}
+                          poster={item.coverAsset?.url || ""}
+                          className="w-full border border-white/10"
+                          ratioClass="aspect-square"
+                          muted
+                          allowFullscreen
                         />
                       ) : (
-                        <div className="flex aspect-square w-full items-center justify-center bg-white/5">
-                          <ImageIcon className="h-10 w-10 text-white/30" />
-                        </div>
-                      )}
-                    </motion.button>
+                        <div className="aspect-square w-full border border-white/10 bg-white/5" />
+                      )
+                    ) : (
+                      <motion.button
+                        type="button"
+                        onClick={() => onOpenItem?.(item)}
+                        className="group block w-full cursor-pointer overflow-hidden border border-white/10 bg-black text-left transition-colors hover:border-white/30"
+                        whileHover={SOFT_CARD_HOVER}
+                        whileTap={SOFT_BUTTON_TAP}
+                      >
+                        {previewUrl ? (
+                          <img
+                            src={previewUrl}
+                            alt={item.title}
+                            className="aspect-square w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <div className="flex aspect-square w-full items-center justify-center bg-white/5">
+                            <ImageIcon className="h-10 w-10 text-white/30" />
+                          </div>
+                        )}
+                      </motion.button>
+                    )}
                   </div>
 
                   <div className="mt-4 border-t border-white/10 pt-4">

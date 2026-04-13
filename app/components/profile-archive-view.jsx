@@ -5,6 +5,7 @@ import { Edit2, Heart, MessageCircle, Music, Palette, Plus, Video } from "lucide
 import { MusicReleasePlayer } from "./music-release-player";
 import { MultiTrackReleaseCard } from "./multi-track-release-card";
 import { MentionText } from "./mention-text";
+import { VideoPlayer } from "./video-player";
 import { PAGE_TRANSITION, SOFT_BUTTON_HOVER, SOFT_BUTTON_TAP, SOFT_CARD_HOVER } from "@/lib/motion";
 
 function groupItems(items) {
@@ -125,17 +126,31 @@ function CountButton({ value, label, onClick }) {
   );
 }
 
-function SocialCounts({ item }) {
+function SocialCounts({ item, onToggleLike, onOpenComments }) {
   return (
     <div className="flex items-center gap-4 text-xs text-gray-500">
-      <span className="inline-flex cursor-default select-none items-center gap-1.5">
-        <Heart className="h-3.5 w-3.5" />
+      <button
+        type="button"
+        onClick={() => onToggleLike?.(item)}
+        disabled={!onToggleLike}
+        className={`inline-flex items-center gap-1.5 transition-colors ${
+          item.isLiked ? "text-white" : "hover:text-white"
+        } ${onToggleLike ? "" : "cursor-default select-none text-gray-500"}`}
+      >
+        <Heart className={`h-3.5 w-3.5 ${item.isLiked ? "fill-white text-white" : ""}`} />
         <span>{item.likes || 0}</span>
-      </span>
-      <span className="inline-flex cursor-default select-none items-center gap-1.5">
+      </button>
+      <button
+        type="button"
+        onClick={() => onOpenComments?.(item)}
+        disabled={!onOpenComments}
+        className={`inline-flex items-center gap-1.5 transition-colors ${
+          onOpenComments ? "hover:text-white" : "cursor-default select-none text-gray-500"
+        }`}
+      >
         <MessageCircle className="h-3.5 w-3.5" />
         <span>{item.comments || 0}</span>
-      </span>
+      </button>
     </div>
   );
 }
@@ -170,6 +185,8 @@ export function ProfileArchiveView({
   onOpenVisual,
   onOpenVideo,
   emptyCategoryPrompt = null,
+  onToggleLike,
+  onOpenComments,
 }) {
   const groupedItems = groupItems(items);
   const musicDisplayEntries = buildMusicDisplayEntries(groupedItems.music);
@@ -470,7 +487,7 @@ export function ProfileArchiveView({
                           <span className="cursor-default select-none text-xs text-gray-500">
                             {formatUploadDate(item.publishedAt || item.createdAt)}
                           </span>
-                          <SocialCounts item={item} />
+                          <SocialCounts item={item} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
                         </div>
 
                         {item.description ? (
@@ -556,27 +573,30 @@ export function ProfileArchiveView({
                           ) : null}
                         </div>
 
-                        <motion.button
-                          type="button"
-                          onClick={() => (onOpenVideo ? onOpenVideo(item) : onOpenItem(item))}
-                          className="mb-4 block w-full cursor-pointer overflow-hidden border border-white/10 bg-black text-left transition-colors hover:border-white/30"
-                          whileHover={SOFT_CARD_HOVER}
-                          whileTap={SOFT_BUTTON_TAP}
-                        >
+                        <div className="mb-4">
                           {item.asset?.url ? (
-                            <video muted playsInline className="aspect-video w-full bg-black object-cover">
-                              <source src={item.asset.url} type={item.asset.mimeType} />
-                            </video>
+                            <button
+                              type="button"
+                              onClick={() => (onOpenVideo ? onOpenVideo(item) : onOpenItem(item))}
+                              className="block w-full text-left"
+                            >
+                              <VideoPlayer
+                                src={item.asset.url}
+                                poster={item.coverAsset?.url || ""}
+                                className="w-full border border-white/10"
+                                allowFullscreen
+                              />
+                            </button>
                           ) : (
-                            <div className="aspect-video w-full bg-white/5" />
+                            <div className="aspect-video w-full border border-white/10 bg-white/5" />
                           )}
-                        </motion.button>
+                        </div>
 
                         <div className="mb-2 flex items-start justify-between gap-3">
                           <span className="cursor-default select-none text-xs text-gray-500">
                             {formatUploadDate(item.publishedAt || item.createdAt)}
                           </span>
-                          <SocialCounts item={item} />
+                          <SocialCounts item={item} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />
                         </div>
 
                         {item.description ? (

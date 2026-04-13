@@ -6,6 +6,18 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 type VisibilityLevel = "public" | "unlisted";
 
+type PublicLikedTrack = {
+  id: string;
+  title: string;
+  slug: string;
+  likedAt: string | null;
+  coverArtUrl: string | null;
+  artist: {
+    username: string;
+    displayName: string;
+  };
+};
+
 type RawMediaItem = {
   id: string;
   media_kind: string;
@@ -253,7 +265,7 @@ async function loadMediaItems(
 async function loadLikedTracks(
   supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
   userId: string,
-) {
+): Promise<PublicLikedTrack[]> {
   const { data: likedRows, error: likedRowsError } = await supabase
     .from("media_likes")
     .select("media_item_id, created_at")
@@ -365,7 +377,7 @@ async function loadLikedTracks(
         return null;
       }
 
-      return {
+      const track: PublicLikedTrack = {
         id: item.id,
         title: item.title,
         slug: slugMap.get(item.id) || "",
@@ -376,8 +388,9 @@ async function loadLikedTracks(
           displayName: owner.displayName,
         },
       };
+      return track;
     })
-    .filter(Boolean);
+    .filter((value): value is PublicLikedTrack => Boolean(value));
 }
 
 export async function getPublicProfilePageData(username: string) {

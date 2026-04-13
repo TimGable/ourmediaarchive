@@ -59,6 +59,7 @@ export function GlobalAudioPlayer({
   const [showQueue, setShowQueue] = useState(false);
   const coverArt = currentTrack?.release?.coverArt;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const clampedProgress = Math.max(0, Math.min(progress, 100));
   const canOpenTrackPage = Boolean(currentTrack?.artist?.username && currentTrack?.track?.slug);
 
   useEffect(() => {
@@ -150,6 +151,10 @@ export function GlobalAudioPlayer({
           aria-label={`Seek ${currentTrack.track.title}`}
         />
         <div className="absolute left-0 top-0 h-full bg-white transition-[width]" style={{ width: `${progress}%` }} />
+        <div
+          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-black bg-white shadow-[0_0_10px_rgba(0,0,0,0.6)] transition-[left]"
+          style={{ left: `calc(${clampedProgress}% - 6px)` }}
+        />
       </div>
 
       <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 md:px-6">

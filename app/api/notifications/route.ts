@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { attachPublicMediaSlugs } from "@/lib/media-slugs";
+import { attachPublicMediaSlugs, buildPublicMediaPath, buildPublicProfilePath } from "@/lib/media-slugs";
 import {
   ensureAppUser,
   ensureProfile,
@@ -212,6 +212,11 @@ export async function GET(request: Request) {
       const actor = actorProfilesById.get(entry.actor_user_id);
       const mediaItem = entry.media_item_id ? mediaItemsById.get(entry.media_item_id) : null;
       const mediaOwner = mediaItem ? profileByUserId.get(mediaItem.ownerUserId) : null;
+      const mediaPath =
+        mediaItem && mediaOwner
+          ? buildPublicMediaPath(mediaOwner.username, mediaItem.slug || "")
+          : null;
+      const actorPath = actor ? buildPublicProfilePath(actor.username) : null;
 
       return {
         id: entry.id,
@@ -235,6 +240,7 @@ export async function GET(request: Request) {
             }
           : null,
         data: entry.data ?? {},
+        targetPath: mediaPath || actorPath || null,
       };
     });
 

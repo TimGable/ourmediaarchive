@@ -123,7 +123,7 @@ export function SiteNavigation({
 
   return (
     <motion.nav
-      className="border-b border-white/10 bg-black/50 backdrop-blur-sm"
+      className="relative z-[10000] border-b border-white/10 bg-black/50 backdrop-blur-sm"
       initial={{ y: -28, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={PAGE_TRANSITION}

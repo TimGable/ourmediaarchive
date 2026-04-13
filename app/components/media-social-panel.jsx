@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { Heart, MessageCircle, Trash2 } from "lucide-react";
 import { MentionText } from "./mention-text";
+import { MentionTextarea } from "./mention-textarea";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { PAGE_TRANSITION, SOFT_BUTTON_HOVER, SOFT_BUTTON_TAP, SOFT_PANEL_REVEAL } from "@/lib/motion";
 
@@ -27,6 +28,7 @@ export function MediaSocialPanel({
   const [isSubmittingLike, setIsSubmittingLike] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [removingCommentId, setRemovingCommentId] = useState("");
+  const [replyingTo, setReplyingTo] = useState(null);
 
   useEffect(() => {
     setSocial({
@@ -48,6 +50,7 @@ export function MediaSocialPanel({
     };
 
     setSocial(nextSocial);
+    setReplyingTo(null);
     onUpdate?.({
       likes: nextSocial.likeCount,
       comments: nextSocial.commentCount,
@@ -102,6 +105,31 @@ export function MediaSocialPanel({
       subscription.unsubscribe();
     };
   }, [mediaItemId, supabase]);
+
+  const commentsById = useMemo(() => {
+    const map = new Map();
+    for (const comment of social.comments) {
+      map.set(comment.id, comment);
+    }
+    return map;
+  }, [social.comments]);
+
+  const commentDepths = useMemo(() => {
+    const map = new Map();
+    for (const comment of social.comments) {
+      let depth = 0;
+      let parentId = comment.parentCommentId;
+      const seen = new Set([comment.id]);
+      while (parentId && depth < 4 && !seen.has(parentId)) {
+        depth += 1;
+        seen.add(parentId);
+        const parent = commentsById.get(parentId);
+        parentId = parent?.parentCommentId;
+      }
+      map.set(comment.id, depth);
+    }
+    return map;
+  }, [commentsById, social.comments]);
 
   const handleToggleLike = async () => {
     setIsSubmittingLike(true);
@@ -162,6 +190,7 @@ export function MediaSocialPanel({
         body: JSON.stringify({
           action: "comment",
           body: commentBody,
+          parentCommentId: replyingTo?.id || null,
         }),
       });
 
@@ -173,6 +202,7 @@ export function MediaSocialPanel({
 
       applySocialPayload(payload);
       setCommentBody("");
+      setReplyingTo(null);
     } finally {
       setIsSubmittingComment(false);
     }
@@ -209,8 +239,22 @@ export function MediaSocialPanel({
       }
 
       applySocialPayload(payload);
+      if (replyingTo?.id === commentId) {
+        setReplyingTo(null);
+      }
     } finally {
       setRemovingCommentId("");
+    }
+  };
+
+  const handleStartReply = (comment) => {
+    if (!comment || comment.isDeleted) {
+      return;
+    }
+
+    setReplyingTo(comment);
+    if (!commentBody.trim() && comment.author?.username) {
+      setCommentBody(`@${comment.author.username} `);
     }
   };
 
@@ -250,14 +294,28 @@ export function MediaSocialPanel({
           <p className="mb-4 text-[11px] uppercase tracking-[0.22em] text-gray-500">comments</p>
 
           <form onSubmit={handleSubmitComment} className="mb-6">
-            <textarea
+            {replyingTo ? (
+              <div className="mb-2 flex items-center justify-between gap-3 rounded border border-white/15 px-3 py-2 text-xs text-gray-400">
+                <span>
+                  Replying to {replyingTo.author?.displayName || replyingTo.author?.username || "user"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReplyingTo(null)}
+                  className="text-[11px] uppercase tracking-[0.18em] text-gray-500 transition-colors hover:text-white"
+                >
+                  cancel
+                </button>
+              </div>
+            ) : null}
+            <MentionTextarea
               value={commentBody}
-              onChange={(event) => setCommentBody(event.target.value)}
-              rows={4}
-              maxLength={1000}
-              placeholder="leave a comment..."
-              className="w-full resize-none border border-white/20 bg-transparent px-4 py-3 text-sm text-white transition-colors focus:border-white/50 focus:outline-none"
-            />
+              onValueChange={setCommentBody}
+                rows={4}
+                maxLength={1000}
+                placeholder="leave a comment..."
+                textareaClassName="w-full resize-none border border-white/20 bg-transparent px-4 py-3 text-sm text-white transition-colors focus:border-white/50 focus:outline-none"
+              />
 
             <div className="mt-3 flex items-center justify-between gap-4">
               <p className="text-xs text-gray-500">{commentBody.length}/1000</p>
@@ -291,12 +349,16 @@ export function MediaSocialPanel({
             </div>
           ) : (
             <div className="space-y-4">
-              {social.comments.map((comment) => (
+              {social.comments.map((comment) => {
+                const depth = commentDepths.get(comment.id) || 0;
+                const indentPx = Math.min(depth, 4) * 20;
+                return (
                 <motion.div
                   key={comment.id}
                   className="border border-white/10 bg-white/[0.03] p-4"
                   {...SOFT_PANEL_REVEAL}
                   transition={PAGE_TRANSITION}
+                  style={{ marginLeft: indentPx }}
                 >
                   <div className="mb-3 flex items-start justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-3">
@@ -323,6 +385,15 @@ export function MediaSocialPanel({
                         <p className="mt-1 text-xs uppercase tracking-[0.16em] text-gray-500">
                           {new Date(comment.createdAt).toLocaleDateString()}
                         </p>
+                        {comment.parentCommentId ? (
+                          <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-gray-500">
+                            replying to{" "}
+                            {(() => {
+                              const parent = commentsById.get(comment.parentCommentId);
+                              return parent?.author?.displayName || parent?.author?.username || "comment";
+                            })()}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 
@@ -339,6 +410,17 @@ export function MediaSocialPanel({
                         <Trash2 className="h-3.5 w-3.5" />
                         <span>{removingCommentId === comment.id ? "removing..." : "remove"}</span>
                       </motion.button>
+                    ) : !comment.isDeleted ? (
+                      <motion.button
+                        type="button"
+                        onClick={() => handleStartReply(comment)}
+                        className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-gray-500 transition-colors hover:text-white"
+                        whileHover={SOFT_BUTTON_HOVER}
+                        whileTap={SOFT_BUTTON_TAP}
+                        transition={PAGE_TRANSITION}
+                      >
+                        reply
+                      </motion.button>
                     ) : null}
                   </div>
 
@@ -346,7 +428,8 @@ export function MediaSocialPanel({
                     {comment.isDeleted ? "comment removed" : <MentionText text={comment.body} />}
                   </p>
                 </motion.div>
-              ))}
+              );
+            })}
             </div>
           )}
         </div>

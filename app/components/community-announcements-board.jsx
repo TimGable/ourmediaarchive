@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { ChevronLeft, Heart, MessageCircle, Megaphone, Send, Trash2 } from "lucide-react";
 import { ArchiveLoadingState } from "./archive-loading-state";
 import { MentionText } from "./mention-text";
+import { MentionTextarea } from "./mention-textarea";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { PAGE_TRANSITION, SOFT_BUTTON_HOVER, SOFT_BUTTON_TAP, SOFT_PANEL_REVEAL } from "@/lib/motion";
 
@@ -298,18 +299,18 @@ export function CommunityAnnouncementsBoard({ onBack }) {
                   }}
                   className="mb-6"
                 >
-                  <textarea
+                  <MentionTextarea
                     value={commentDrafts[post.id] || ""}
-                    onChange={(event) =>
+                    onValueChange={(nextValue) =>
                       setCommentDrafts((current) => ({
                         ...current,
-                        [post.id]: event.target.value,
+                        [post.id]: nextValue,
                       }))
                     }
                     rows={3}
                     maxLength={1000}
                     placeholder="leave a reply..."
-                    className="w-full resize-none border border-white/20 bg-transparent px-4 py-3 text-sm text-white transition-colors focus:border-white/50 focus:outline-none"
+                    textareaClassName="w-full resize-none border border-white/20 bg-transparent px-4 py-3 text-sm text-white transition-colors focus:border-white/50 focus:outline-none"
                   />
                   <div className="mt-3 flex items-center justify-between gap-4">
                     <p className="text-xs text-gray-500">{(commentDrafts[post.id] || "").length}/1000</p>

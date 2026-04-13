@@ -11,6 +11,7 @@ import { MediaSocialPanel } from "./media-social-panel";
 import { VisualGalleryLightbox } from "./visual-gallery-lightbox";
 import { EditUploadModal } from "./edit-upload-modal";
 import { MentionText } from "./mention-text";
+import { VideoPlayer } from "./video-player";
 import { buildPublicMediaPath, buildPublicProfilePath } from "@/lib/media-slugs";
 import { createSupabaseBrowserClient, getStoredSupabaseUserId } from "@/lib/supabase/client";
 
@@ -110,6 +111,7 @@ export function PublicMediaPage({ profile, item, publicItems }) {
   const progress = displayedDuration > 0 ? displayedCurrentTime / displayedDuration : 0;
   const relatedItems = displayedPublicItems.filter((entry) => entry.id !== displayedItem.id).slice(0, 4);
   const [lightboxIndex, setLightboxIndex] = useState(-1);
+  const isMusic = displayedItem.mediaKind === "music";
   const collectionTracks = useMemo(() => {
     if (
       displayedItem.mediaKind !== "music" ||
@@ -129,6 +131,38 @@ export function PublicMediaPage({ profile, item, publicItems }) {
 
     return [...tracksById.values()].sort(sortReleaseTracks);
   }, [displayedItem, displayedPublicItems]);
+  const openEditModal = () => {
+    const isMultiTrackRelease =
+      displayedItem.mediaKind === "music" &&
+      displayedItem.collectionId &&
+      displayedItem.releaseType &&
+      displayedItem.releaseType !== "single" &&
+      collectionTracks.length > 0;
+
+    setEditingMediaItem(
+      isMultiTrackRelease ? { ...displayedItem, releaseTracks: collectionTracks } : displayedItem,
+    );
+  };
+  useEffect(() => {
+    if (
+      !editingMediaItem ||
+      editingMediaItem.releaseType === "single" ||
+      !editingMediaItem.collectionId ||
+      collectionTracks.length === 0 ||
+      editingMediaItem.collectionId !== displayedItem.collectionId
+    ) {
+      return;
+    }
+
+    const currentIds = (editingMediaItem.releaseTracks || []).map((track) => track.id).join(",");
+    const nextIds = collectionTracks.map((track) => track.id).join(",");
+
+    if (currentIds !== nextIds) {
+      setEditingMediaItem((current) =>
+        current ? { ...current, releaseTracks: collectionTracks } : current,
+      );
+    }
+  }, [collectionTracks, displayedItem.collectionId, editingMediaItem]);
   const musicItems =
     displayedItem.mediaKind === "music" && displayedItem.asset?.url
       ? collectionTracks.length > 1
@@ -328,7 +362,7 @@ export function PublicMediaPage({ profile, item, publicItems }) {
     }
   };
 
-  const handleDeleteMediaItem = async (mediaItemId) => {
+  const handleDeleteMediaItem = async (mediaItemId, options = {}) => {
     setDeletingMediaItemId(mediaItemId);
 
     try {
@@ -337,10 +371,13 @@ export function PublicMediaPage({ profile, item, publicItems }) {
       } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
-        return;
+        return false;
       }
 
-      const response = await fetch(`/api/media?id=${encodeURIComponent(mediaItemId)}`, {
+      const deleteUrl = `/api/media?id=${encodeURIComponent(mediaItemId)}${
+        options.scope === "release" ? "&scope=release" : ""
+      }`;
+      const response = await fetch(deleteUrl, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -348,11 +385,12 @@ export function PublicMediaPage({ profile, item, publicItems }) {
       });
 
       if (!response.ok) {
-        return;
+        return false;
       }
 
       setEditingMediaItem(null);
       router.push(buildPublicProfilePath(profile.username));
+      return true;
     } finally {
       setDeletingMediaItemId(null);
     }
@@ -409,7 +447,7 @@ export function PublicMediaPage({ profile, item, publicItems }) {
             {isOwnerView ? (
               <button
                 type="button"
-                onClick={() => setEditingMediaItem(displayedItem)}
+                onClick={openEditModal}
                 className="mt-4 inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-gray-400 transition-colors hover:border-white/40 hover:text-white"
               >
                 <Edit2 className="h-4 w-4" />
@@ -419,34 +457,33 @@ export function PublicMediaPage({ profile, item, publicItems }) {
           </div>
         </div>
 
-        <div className={displayedItem.mediaKind === "music" ? "mx-auto max-w-5xl" : ""}>
-          <div className="overflow-hidden border border-white/10 bg-white/[0.03]">
-            {displayedItem.mediaKind === "music" && (
-              <div className="flex flex-col md:flex-row">
-                <div className="aspect-square w-full border-b border-white/10 bg-white/[0.04] md:w-48 md:flex-shrink-0 md:border-b-0 md:border-r">
-                  {displayedItem.coverAsset?.url ? (
-                    <img
-                      src={displayedItem.coverAsset.url}
-                      alt={displayedItem.title}
-                      className="h-full w-full object-cover"
-                      style={{
-                        WebkitMaskImage:
-                          "radial-gradient(circle at center, black 68%, rgba(0,0,0,0.92) 78%, transparent 100%)",
-                        maskImage:
-                          "radial-gradient(circle at center, black 68%, rgba(0,0,0,0.92) 78%, transparent 100%)",
-                      }}
-                    />
-                  ) : (
-                    <div className="flex h-full min-h-[18rem] items-center justify-center bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))]">
-                      <Music2 className="h-16 w-16 text-white/35" />
-                    </div>
-                  )}
-                </div>
+        {isMusic && (
+          <div className="mx-auto mb-6 flex max-w-5xl justify-center">
+            <div className="w-full max-w-sm shrink-0">
+              <div className="aspect-square w-full overflow-hidden border border-white/10 bg-black">
+                {displayedItem.coverAsset?.url ? (
+                  <img
+                    src={displayedItem.coverAsset.url}
+                    alt={displayedItem.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))]">
+                    <Music2 className="h-16 w-16 text-white/35" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
-                <div className="flex-1 p-5 md:p-6">
-                  <div className="mb-5 flex items-start justify-between gap-4">
-                    <div className="flex flex-wrap gap-2">
-                      <span className="border border-white/15 bg-white/[0.03] px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-gray-300">
+        <div className={isMusic ? "mx-auto max-w-5xl" : ""}>
+          <div className="overflow-hidden border border-white/10 bg-white/[0.03]">
+            {isMusic && (
+              <div className="p-5 md:p-6">
+                <div className="mb-5 flex items-start justify-between gap-4">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="border border-white/15 bg-white/[0.03] px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-gray-300">
                         {formatReleaseType(displayedItem.releaseType)}
                       </span>
                       <span className="border border-white/10 bg-white/[0.02] px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-gray-500">
@@ -507,7 +544,7 @@ export function PublicMediaPage({ profile, item, publicItems }) {
                         <span>{displayedItem.collectionTitle || displayedItem.title}</span>
                       </div>
 
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1 archive-scrollbar-thin">
                         {collectionTracks.map((track, index) => {
                           const isReleaseTrackActive = currentTrack?.track?.id === track.id;
                           const isReleaseTrackPlaying = isReleaseTrackActive && isPlaying;
@@ -557,12 +594,10 @@ export function PublicMediaPage({ profile, item, publicItems }) {
                       </div>
                     </div>
                   ) : null}
-
                 </div>
-              </div>
             )}
 
-            {displayedItem.mediaKind === "visual" && (
+            {!isMusic && displayedItem.mediaKind === "visual" && (
               <div className="flex justify-center p-5 md:p-8">
                 <button
                   type="button"
@@ -584,23 +619,20 @@ export function PublicMediaPage({ profile, item, publicItems }) {
               </div>
             )}
 
-            {displayedItem.mediaKind === "video" && (
+            {!isMusic && displayedItem.mediaKind === "video" && (
               <div className="flex justify-center p-5 md:p-8">
-                <button
-                  type="button"
-                  onClick={openGallery}
-                  className="block w-full max-w-[42rem] cursor-pointer bg-black text-left"
-                >
-                  {displayedItem.asset?.url ? (
-                    <video muted playsInline className="max-h-[34rem] w-full bg-black object-contain">
-                      <source src={displayedItem.asset.url} type={displayedItem.asset.mimeType} />
-                    </video>
-                  ) : (
-                    <div className="flex min-h-[20rem] items-center justify-center">
-                      <Video className="h-16 w-16 text-white/25" />
-                    </div>
-                  )}
-                </button>
+                {displayedItem.asset?.url ? (
+                  <VideoPlayer
+                    src={displayedItem.asset.url}
+                    poster={displayedItem.coverAsset?.url || ""}
+                    className="w-full max-w-[42rem]"
+                    allowFullscreen
+                  />
+                ) : (
+                  <div className="flex min-h-[20rem] w-full max-w-[42rem] items-center justify-center border border-white/10 bg-black">
+                    <Video className="h-16 w-16 text-white/25" />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -675,11 +707,13 @@ export function PublicMediaPage({ profile, item, publicItems }) {
         {isOwnerView && editingMediaItem ? (
           <EditUploadModal
             item={editingMediaItem}
+            releaseTracks={editingMediaItem?.releaseTracks || null}
             isSubmitting={isUpdatingMedia}
             isDeleting={deletingMediaItemId === editingMediaItem.id}
             onClose={() => setEditingMediaItem(null)}
             onSave={handleSaveMediaItem}
             onDelete={handleDeleteMediaItem}
+            onDeleteTrack={handleDeleteMediaItem}
           />
         ) : null}
       </AnimatePresence>

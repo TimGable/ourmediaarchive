@@ -48,7 +48,7 @@ function sortReleaseTracks(a, b) {
   return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
 }
 
-export function PublicProfilePage({ profile, items, likedTracks = [] }) {
+export function PublicProfilePage({ profile, items, likedTracks }) {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [notice, setNotice] = useState({ type: "", message: "" });
@@ -83,18 +83,24 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
     setCurrentTime,
     setDuration,
   } = usePublicAudio();
+  const normalizedLikedTracks = Array.isArray(likedTracks) ? likedTracks : [];
+  const [mediaItems, setMediaItems] = useState(items);
+
+  useEffect(() => {
+    setMediaItems(items);
+  }, [items]);
 
   const musicItems = useMemo(
-    () => items.filter((item) => item.mediaKind === "music" && item.asset?.url),
-    [items],
+    () => mediaItems.filter((item) => item.mediaKind === "music" && item.asset?.url),
+    [mediaItems],
   );
   const visualItems = useMemo(
-    () => items.filter((item) => item.mediaKind === "visual"),
-    [items],
+    () => mediaItems.filter((item) => item.mediaKind === "visual"),
+    [mediaItems],
   );
   const videoItems = useMemo(
-    () => items.filter((item) => item.mediaKind === "video"),
-    [items],
+    () => mediaItems.filter((item) => item.mediaKind === "video"),
+    [mediaItems],
   );
   const lightboxItems = lightboxState.kind === "video" ? videoItems : visualItems;
 
@@ -530,7 +536,7 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
                 followerCount,
                 followingCount,
               }}
-              items={items}
+              items={mediaItems}
               headerLabel="profile"
               contentHeading="archive"
               contentNotice={notice}
@@ -551,6 +557,8 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
               onOpenVisual={(item) => openVisualLightbox(item.id)}
               onOpenVideo={(item) => openVideoLightbox(item.id)}
               onOpenConnections={(view) => setConnectionsView(view)}
+              onToggleLike={handleToggleLike}
+              onOpenComments={handleOpenComments}
               canFollow={canFollow}
               isFollowing={isFollowing}
               isUpdatingFollow={isUpdatingFollow}
@@ -580,7 +588,7 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
               headerBottomRight={
                 <div className="flex flex-wrap items-center justify-end gap-3">
                   <LikedTracksPanel
-                    likedTracks={likedTracks}
+                    likedTracks={normalizedLikedTracks}
                     onOpenTrack={(track) =>
                       router.push(buildPublicMediaPath(track.artist.username, track.slug))
                     }
@@ -625,3 +633,53 @@ export function PublicProfilePage({ profile, items, likedTracks = [] }) {
     </motion.div>
   );
 }
+  const handleToggleLike = async (targetItem) => {
+    if (!targetItem?.id) {
+      return;
+    }
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        showNotice("error", "Sign in to like posts.");
+        return;
+      }
+
+      const response = await fetch(`/api/media/${targetItem.id}/social`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: "toggle-like" }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showNotice("error", payload?.error || "Failed to update like.");
+        return;
+      }
+
+      setMediaItems((current) =>
+        current.map((item) =>
+          item.id === targetItem.id
+            ? {
+                ...item,
+                likes: payload?.likeCount ?? item.likes,
+                comments: payload?.commentCount ?? item.comments,
+                isLiked: Boolean(payload?.isLiked),
+              }
+            : item,
+        ),
+      );
+    } catch {
+      showNotice("error", "Failed to update like.");
+    }
+  };
+
+  const handleOpenComments = (item) => {
+    openMediaItem(item);
+  };

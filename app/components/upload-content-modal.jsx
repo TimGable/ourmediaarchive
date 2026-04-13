@@ -162,7 +162,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
       }}
     >
       <motion.div
-        className="flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden border border-white/20 bg-black p-6 md:p-8"
+        className="flex h-[min(42rem,calc(100vh-2rem))] w-full max-w-lg flex-col overflow-hidden border border-white/20 bg-black p-5 md:p-6"
         {...SOFT_PANEL_REVEAL}
         transition={PAGE_TRANSITION}
         onClick={(event) => event.stopPropagation()}
@@ -187,7 +187,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
           </motion.button>
         </div>
 
-        <form onSubmit={handleSubmit} className="archive-scrollbar-thin min-h-0 space-y-5 overflow-y-auto pr-1">
+        <form onSubmit={handleSubmit} className="archive-scrollbar-thin min-h-0 flex-1 space-y-5 overflow-y-auto pr-2">
           <div>
             <label className="mb-2 block text-sm text-gray-400">
               {isMultiTrackMusic ? "release title" : "title"}
@@ -212,7 +212,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
               onChange={(event) => setDescription(event.target.value)}
               maxLength={4000}
               rows={4}
-              className="w-full resize-none border border-white/20 bg-transparent px-4 py-3 text-white outline-none transition-colors focus:border-white/60"
+              className="w-full resize-none overflow-y-auto border border-white/20 bg-transparent px-4 py-3 text-white outline-none transition-colors focus:border-white/60 archive-scrollbar-thin"
               placeholder="optional description"
               disabled={isSubmitting}
             />
@@ -341,7 +341,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
                   {files.length} tracks
                 </span>
               </div>
-              <div className="space-y-3 border border-white/15 bg-white/[0.02] p-4">
+              <div className="space-y-3 border border-white/15 bg-white/[0.02] p-4 pr-2 max-h-64 overflow-y-auto archive-scrollbar-thin">
                 {files.map((selectedFile, index) => (
                   <div
                     key={`${selectedFile.name}-${index}`}

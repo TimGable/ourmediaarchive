@@ -100,10 +100,30 @@ export function MyProfile({
   const [isChangingEmail, setIsChangingEmail] = useState(false);
   const isEditMode = forceSetup || isEditing;
   const mediaItemsWithSlugs = useMemo(() => attachPublicMediaSlugs(mediaItems), [mediaItems]);
-  const musicItems = mediaItemsWithSlugs.filter((item) => item.mediaKind === "music");
-  const visualItems = mediaItemsWithSlugs.filter((item) => item.mediaKind === "visual");
-  const videoItems = mediaItemsWithSlugs.filter((item) => item.mediaKind === "video");
-  const lightboxItems = lightboxState.kind === "video" ? videoItems : visualItems;
+const musicItems = mediaItemsWithSlugs.filter((item) => item.mediaKind === "music");
+const visualItems = mediaItemsWithSlugs.filter((item) => item.mediaKind === "visual");
+const videoItems = mediaItemsWithSlugs.filter((item) => item.mediaKind === "video");
+const lightboxItems = lightboxState.kind === "video" ? videoItems : visualItems;
+useEffect(() => {
+  if (
+    !editingMediaItem ||
+    editingMediaItem.releaseType === "single" ||
+    !editingMediaItem.collectionId
+  ) {
+    return;
+  }
+
+  const releaseTracks = musicItems
+    .filter((musicItem) => musicItem.collectionId === editingMediaItem.collectionId)
+    .sort(sortReleaseTracks);
+
+  const currentIds = (editingMediaItem.releaseTracks || []).map((track) => track.id).join(",");
+  const nextIds = releaseTracks.map((track) => track.id).join(",");
+
+  if (currentIds !== nextIds) {
+    setEditingMediaItem((current) => (current ? { ...current, releaseTracks } : current));
+  }
+}, [editingMediaItem, musicItems]);
   const activeMusicItemId = currentTrack?.track?.id || null;
   const artistIdentity = {
     name: profileData.displayName || profileData.username || "artist",
@@ -772,7 +792,7 @@ export function MyProfile({
     }
   };
 
-  const handleDeleteMediaItem = async (mediaItemId) => {
+  const handleDeleteMediaItem = async (mediaItemId, options = {}) => {
     setDeletingMediaItemId(mediaItemId);
     setContentNotice({ type: "", message: "" });
 
@@ -786,10 +806,13 @@ export function MyProfile({
           type: "error",
           message: "Session expired. Please sign in again before deleting content.",
         });
-        return;
+        return false;
       }
 
-      const response = await fetch(`/api/media?id=${encodeURIComponent(mediaItemId)}`, {
+      const deleteUrl = `/api/media?id=${encodeURIComponent(mediaItemId)}${
+        options.scope === "release" ? "&scope=release" : ""
+      }`;
+      const response = await fetch(deleteUrl, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -802,28 +825,33 @@ export function MyProfile({
           type: "error",
           message: payload?.error || "Failed to delete content.",
         });
-        return;
+        return false;
       }
 
-      setMediaItems((current) => current.filter((item) => item.id !== mediaItemId));
-      if (currentTrack?.track?.id === mediaItemId) {
+      const deletedIds = Array.isArray(payload?.ids) && payload.ids.length > 0 ? payload.ids : [mediaItemId];
+      const deletedIdSet = new Set(deletedIds);
+
+      setMediaItems((current) => current.filter((item) => !deletedIdSet.has(item.id)));
+      if (currentTrack?.track?.id && deletedIdSet.has(currentTrack.track.id)) {
         onTrackDeleted?.(mediaItemId);
       }
-      if (editingMediaItem?.id === mediaItemId) {
+      if (editingMediaItem?.id && deletedIdSet.has(editingMediaItem.id)) {
         setEditingMediaItem(null);
       }
-      if (selectedMediaItem?.id === mediaItemId) {
+      if (selectedMediaItem?.id && deletedIdSet.has(selectedMediaItem.id)) {
         setSelectedMediaItem(null);
       }
       setContentNotice({
         type: "success",
         message: "Content deleted.",
       });
+      return true;
     } catch (error) {
       setContentNotice({
         type: "error",
         message: error instanceof Error ? error.message : "Failed to delete content.",
       });
+      return false;
     } finally {
       setDeletingMediaItemId(null);
     }
@@ -928,7 +956,20 @@ export function MyProfile({
   };
 
   const openEditUploadModal = (item) => {
-    setEditingMediaItem(item);
+    const isMultiTrackRelease =
+      item?.mediaKind === "music" &&
+      item?.collectionId &&
+      item?.releaseType &&
+      item.releaseType !== "single";
+
+    let releaseTracks = null;
+    if (isMultiTrackRelease) {
+      releaseTracks = musicItems
+        .filter((musicItem) => musicItem.collectionId === item.collectionId)
+        .sort(sortReleaseTracks);
+    }
+
+    setEditingMediaItem(releaseTracks ? { ...item, releaseTracks } : item);
   };
 
   const handleMediaSocialUpdate = (mediaItemId, socialUpdate) => {
@@ -1648,6 +1689,7 @@ export function MyProfile({
         {editingMediaItem ? (
           <EditUploadModal
             item={editingMediaItem}
+            releaseTracks={editingMediaItem?.releaseTracks || null}
             isSubmitting={isUpdatingMedia}
             isDeleting={deletingMediaItemId === editingMediaItem.id}
             onClose={() => {
@@ -1658,6 +1700,7 @@ export function MyProfile({
             }}
             onSave={handleSaveMediaItem}
             onDelete={handleDeleteMediaItem}
+            onDeleteTrack={handleDeleteMediaItem}
           />
         ) : null}
       </AnimatePresence>

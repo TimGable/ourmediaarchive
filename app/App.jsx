@@ -107,26 +107,28 @@ export default function App() {
       };
     }
 
-    const redirectTo =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/create-password`
-        : undefined;
-
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo,
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
-      if (error) {
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
         return {
           success: false,
-          error: error.message || "Failed to send password reset email.",
+          error: payload?.error || "Failed to send password reset email.",
         };
       }
 
       return {
         success: true,
-        message: "Password reset email sent. Check your inbox and spam folder.",
+        message:
+          payload?.message || "Password reset email sent. Check your inbox and spam folder.",
       };
     } catch (error) {
       console.error("Unexpected forgot-password failure:", error);

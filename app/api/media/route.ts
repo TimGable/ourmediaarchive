@@ -1023,6 +1023,7 @@ export async function DELETE(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const mediaItemId = searchParams.get("id")?.trim();
+    const deleteScope = searchParams.get("scope")?.trim().toLowerCase();
 
     if (!mediaItemId) {
       return NextResponse.json({ error: "A media item id is required." }, { status: 400 });
@@ -1031,7 +1032,7 @@ export async function DELETE(request: Request) {
     const supabase = createSupabaseServiceRoleClient();
     const { data: mediaItem, error: mediaItemError } = await supabase
       .from("media_items")
-      .select("id, owner_user_id")
+      .select("id, owner_user_id, collection_id, music_release_type")
       .eq("id", mediaItemId)
       .maybeSingle();
 
@@ -1047,10 +1048,40 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "You cannot delete this media item." }, { status: 403 });
     }
 
+    let mediaItemsToDelete = [mediaItem];
+    const shouldDeleteRelease =
+      deleteScope === "release" &&
+      mediaItem.collection_id &&
+      mediaItem.music_release_type &&
+      mediaItem.music_release_type !== "single";
+
+    if (shouldDeleteRelease) {
+      const { data: releaseItems, error: releaseItemsError } = await supabase
+        .from("media_items")
+        .select("id, owner_user_id, collection_id, music_release_type")
+        .eq("collection_id", mediaItem.collection_id);
+
+      if (releaseItemsError) {
+        return NextResponse.json({ error: releaseItemsError.message }, { status: 500 });
+      }
+
+      if (!releaseItems?.length) {
+        return NextResponse.json({ error: "Release tracks not found." }, { status: 404 });
+      }
+
+      if (!isAdmin && releaseItems.some((item) => item.owner_user_id !== userId)) {
+        return NextResponse.json({ error: "You cannot delete this release." }, { status: 403 });
+      }
+
+      mediaItemsToDelete = releaseItems;
+    }
+
+    const mediaItemIdsToDelete = mediaItemsToDelete.map((item) => item.id);
+
     const { data: assets, error: assetsError } = await supabase
       .from("media_assets")
       .select("id, bucket, object_key")
-      .eq("media_item_id", mediaItemId);
+      .in("media_item_id", mediaItemIdsToDelete);
 
     if (assetsError) {
       return NextResponse.json({ error: assetsError.message }, { status: 500 });
@@ -1070,12 +1101,21 @@ export async function DELETE(request: Request) {
       }
     }
 
-    const { error: deleteError } = await supabase.from("media_items").delete().eq("id", mediaItemId);
+    const { error: deleteError } = await supabase.from("media_items").delete().in("id", mediaItemIdsToDelete);
     if (deleteError) {
       return NextResponse.json({ error: deleteError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ deleted: true, id: mediaItemId });
+    if (shouldDeleteRelease && mediaItem.collection_id) {
+      await supabase.from("media_collections").delete().eq("id", mediaItem.collection_id);
+    }
+
+    return NextResponse.json({
+      deleted: true,
+      id: mediaItemId,
+      ids: mediaItemIdsToDelete,
+      collectionId: shouldDeleteRelease ? mediaItem.collection_id : null,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     return NextResponse.json({ error: message }, { status: 500 });

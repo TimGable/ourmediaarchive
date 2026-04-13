@@ -333,6 +333,9 @@ export async function POST(
 
     if (action === "comment") {
       const commentBody = String(body?.body || "").trim();
+      const parentCommentId = body?.parentCommentId
+        ? String(body.parentCommentId).trim()
+        : null;
       if (!commentBody) {
         return NextResponse.json({ error: "Comment cannot be empty." }, { status: 400 });
       }
@@ -344,10 +347,30 @@ export async function POST(
         );
       }
 
+      let parentCommentAuthorId: string | null = null;
+      if (parentCommentId) {
+        const { data: parentComment, error: parentError } = await access.supabase
+            .from("media_comments")
+            .select("id, user_id, media_item_id, is_deleted")
+            .eq("id", parentCommentId)
+            .maybeSingle();
+
+        if (parentError) {
+          return NextResponse.json({ error: parentError.message }, { status: 500 });
+        }
+
+        if (!parentComment || parentComment.media_item_id !== mediaItemId || parentComment.is_deleted) {
+          return NextResponse.json({ error: "Cannot reply to that comment." }, { status: 400 });
+        }
+
+        parentCommentAuthorId = parentComment.user_id;
+      }
+
       const { error: insertError } = await access.supabase.from("media_comments").insert({
         media_item_id: mediaItemId,
         user_id: access.currentUserId,
         body: commentBody,
+        parent_comment_id: parentCommentId,
       });
 
       if (insertError) {
@@ -381,6 +404,29 @@ export async function POST(
         });
       } catch (notificationError) {
         console.error("Failed to create comment notification:", notificationError);
+      }
+
+      if (
+        parentCommentAuthorId &&
+        parentCommentAuthorId !== access.mediaItem.owner_user_id &&
+        parentCommentAuthorId !== access.currentUserId
+      ) {
+        try {
+          await createAppNotification({
+            recipientUserId: parentCommentAuthorId,
+            actorUserId: access.currentUserId,
+            type: "comment",
+            mediaItemId,
+            commentId: insertedComment?.id ?? null,
+            data: {
+              bodyPreview:
+                commentBody.length > 120 ? `${commentBody.slice(0, 117)}...` : commentBody,
+              isReply: true,
+            },
+          });
+        } catch (notificationError) {
+          console.error("Failed to create reply notification:", notificationError);
+        }
       }
 
       try {

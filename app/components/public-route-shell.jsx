@@ -169,7 +169,7 @@ export function PublicRouteShell({ children }) {
 
           <AnimatePresence mode="wait">
             <motion.div
-              key={pathname}
+              key={pathname || "__route__"}
               initial={FADE_UP_ANIMATION.initial}
               animate={FADE_UP_ANIMATION.animate}
               exit={FADE_UP_ANIMATION.exit}

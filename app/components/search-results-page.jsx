@@ -17,7 +17,7 @@ function SearchCard({ title, subtitle, previewUrl, icon, onClick, large = false 
     <motion.button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-4 border border-white/15 bg-white/[0.03] text-left transition-colors hover:border-white/30 hover:bg-white/[0.06] ${large ? "p-5 md:p-6" : "p-4"}`}
+      className={`flex w-full cursor-pointer items-center gap-4 border border-white/15 bg-white/[0.03] text-left transition-colors hover:border-white/30 hover:bg-white/[0.06] ${large ? "p-5 md:p-6" : "p-4"}`}
       whileHover={SOFT_BUTTON_HOVER}
       whileTap={SOFT_BUTTON_TAP}
     >

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { AlertTriangle, Upload, X } from "lucide-react";
 import { ImageCropModal } from "./image-crop-modal";
@@ -12,13 +12,28 @@ const VISIBILITY_OPTIONS = [
   { value: "public", label: "public" },
 ];
 
+function mapReleaseTracks(tracks) {
+  if (!Array.isArray(tracks)) {
+    return [];
+  }
+
+  return tracks.map((track, index) => ({
+    id: track.id,
+    title: track.title || `Track ${index + 1}`,
+    fileName: track.asset?.fileName || "",
+    trackNumber: track.trackNumber ?? index + 1,
+  }));
+}
+
 export function EditUploadModal({
   item,
+  releaseTracks = null,
   isSubmitting,
   isDeleting,
   onClose,
   onSave,
   onDelete,
+  onDeleteTrack,
 }) {
   const [title, setTitle] = useState(item?.title || "");
   const [description, setDescription] = useState(item?.description || "");
@@ -28,6 +43,14 @@ export function EditUploadModal({
   const [coverArtPreviewUrl, setCoverArtPreviewUrl] = useState("");
   const [error, setError] = useState("");
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const releaseTrackEntries = useMemo(() => mapReleaseTracks(releaseTracks), [releaseTracks]);
+  const [trackedReleaseTracks, setTrackedReleaseTracks] = useState(releaseTrackEntries);
+  const [removingTrackId, setRemovingTrackId] = useState("");
+  const isMultiTrackRelease =
+    item?.mediaKind === "music" &&
+    item?.releaseType &&
+    item.releaseType !== "single" &&
+    trackedReleaseTracks.length > 0;
 
   useEffect(() => {
     setTitle(item?.title || "");
@@ -53,6 +76,10 @@ export function EditUploadModal({
       URL.revokeObjectURL(nextPreviewUrl);
     };
   }, [coverArt]);
+  useEffect(() => {
+    setTrackedReleaseTracks(releaseTrackEntries);
+    setRemovingTrackId("");
+  }, [releaseTrackEntries]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -72,6 +99,41 @@ export function EditUploadModal({
     });
   };
 
+  const [confirmingTrackId, setConfirmingTrackId] = useState("");
+
+  const handleRemoveTrack = async (track) => {
+    if (!onDeleteTrack || trackedReleaseTracks.length <= 1) {
+      setError("Keep at least one track in the release.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove "${track.title}" from this release? This immediately deletes the track and cannot be undone.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setError("");
+    setRemovingTrackId(track.id);
+    try {
+      const success = await onDeleteTrack(track.id);
+      if (!success) {
+        setError("Failed to delete track. Please try again.");
+        return;
+      }
+        setTrackedReleaseTracks((current) => current.filter((entry) => entry.id !== track.id));
+        setConfirmingTrackId("");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : "Failed to delete track. Please try again.",
+      );
+    } finally {
+      setRemovingTrackId("");
+    }
+  };
+
   return (
     <ViewportPortal>
     <motion.div
@@ -86,12 +148,12 @@ export function EditUploadModal({
       }}
     >
       <motion.div
-        className="w-full max-w-xl border border-white/20 bg-black p-6 md:p-8"
+        className="flex h-[min(42rem,calc(100vh-2rem))] w-full max-w-lg flex-col overflow-hidden border border-white/20 bg-black p-5 md:p-6"
         {...SOFT_PANEL_REVEAL}
         transition={PAGE_TRANSITION}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="mb-5 flex flex-shrink-0 items-start justify-between gap-4">
           <div>
             <h3 className="text-2xl">edit upload</h3>
             <p className="mt-2 text-sm text-gray-400">
@@ -111,7 +173,7 @@ export function EditUploadModal({
           </motion.button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="archive-scrollbar-thin min-h-0 flex-1 space-y-5 overflow-y-auto pr-2">
           <div>
             <label className="mb-2 block text-sm text-gray-400">title</label>
             <input
@@ -131,7 +193,7 @@ export function EditUploadModal({
               onChange={(event) => setDescription(event.target.value)}
               maxLength={4000}
               rows={4}
-              className="w-full resize-none border border-white/20 bg-transparent px-4 py-3 text-white outline-none transition-colors focus:border-white/60"
+              className="w-full resize-none overflow-y-auto border border-white/20 bg-transparent px-4 py-3 text-white outline-none transition-colors focus:border-white/60 archive-scrollbar-thin"
               disabled={isSubmitting || isDeleting}
             />
           </div>
@@ -151,6 +213,91 @@ export function EditUploadModal({
               ))}
             </select>
           </div>
+
+          {isMultiTrackRelease ? (
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label className="block text-sm text-gray-400">tracks in this release</label>
+                <span className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                  {trackedReleaseTracks.length} tracks
+                </span>
+              </div>
+              <div className="space-y-3 border border-white/15 bg-white/[0.02] p-4 pr-2 max-h-64 overflow-y-auto archive-scrollbar-thin">
+                {trackedReleaseTracks.map((track, index) => (
+                  <div
+                    key={track.id}
+                    className="grid gap-2 md:grid-cols-[2rem_minmax(0,1fr)_2.5rem] md:items-start"
+                  >
+                    <span className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                      {track.trackNumber ?? index + 1}
+                    </span>
+                    <div>
+                      <input
+                        type="text"
+                        value={track.title}
+                        readOnly
+                        className="w-full border border-white/20 bg-transparent px-4 py-2.5 text-white outline-none transition-colors"
+                        disabled
+                      />
+                      {track.fileName ? (
+                        <p className="mt-1 truncate text-xs text-gray-500">{track.fileName}</p>
+                      ) : null}
+                    </div>
+                    <motion.button
+                      type="button"
+                      onClick={() => setConfirmingTrackId(track.id)}
+                      disabled={
+                        isSubmitting ||
+                        isDeleting ||
+                        removingTrackId === track.id ||
+                        trackedReleaseTracks.length <= 1
+                      }
+                      className="flex h-10 w-10 items-center justify-center border border-white/15 text-gray-400 transition-colors hover:border-white/40 hover:text-white disabled:opacity-50"
+                      aria-label={`Remove ${track.title}`}
+                      whileHover={SOFT_BUTTON_HOVER}
+                      whileTap={SOFT_BUTTON_TAP}
+                    >
+                      {removingTrackId === track.id ? (
+                        <span className="text-[10px] uppercase tracking-[0.18em]">...</span>
+                      ) : (
+                        <X className="h-4 w-4" />
+                      )}
+                    </motion.button>
+                    {confirmingTrackId === track.id ? (
+                      <div className="col-span-full rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-200">
+                        <p>Confirm deletion. This removes the track immediately and cannot be undone.</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <motion.button
+                            type="button"
+                            onClick={() => setConfirmingTrackId("")}
+                            className="border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-gray-300 transition-colors hover:border-white/40 hover:text-white"
+                            whileHover={SOFT_BUTTON_HOVER}
+                            whileTap={SOFT_BUTTON_TAP}
+                          >
+                            cancel
+                          </motion.button>
+                          <motion.button
+                            type="button"
+                            onClick={() => handleRemoveTrack(track)}
+                            disabled={removingTrackId === track.id}
+                            className="border border-red-500/40 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-red-300 transition-colors hover:border-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                            whileHover={SOFT_BUTTON_HOVER}
+                            whileTap={SOFT_BUTTON_TAP}
+                          >
+                            {removingTrackId === track.id ? "removing..." : "confirm delete"}
+                          </motion.button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+                <p className="text-xs text-gray-500">
+                  Removing a track deletes it immediately and cannot be undone. Keep at least one track in the
+                  release.
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           {item?.mediaKind === "music" && (
             <div>
@@ -223,7 +370,7 @@ export function EditUploadModal({
                   </motion.button>
                   <motion.button
                     type="button"
-                    onClick={() => onDelete(item.id)}
+                    onClick={() => onDelete(item.id, { scope: isMultiTrackRelease ? "release" : "item" })}
                     disabled={isSubmitting || isDeleting}
                     className="border border-red-500/40 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-red-300 transition-colors hover:border-red-400 hover:bg-red-500/10 disabled:opacity-50"
                     whileHover={SOFT_BUTTON_HOVER}

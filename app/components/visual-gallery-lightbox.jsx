@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, ChevronRight, Palette, Video, X } from "lucide-react";
 import { MentionText } from "./mention-text";
+import { VideoPlayer } from "./video-player";
 import { ViewportPortal } from "./viewport-portal";
 import { buildPublicMediaPath } from "@/lib/media-slugs";
 
@@ -179,14 +180,12 @@ export function VisualGalleryLightbox({
                     className="flex h-full w-full cursor-grab touch-pan-y items-center justify-center active:cursor-grabbing"
                   >
                     {item.asset?.url ? item.mediaKind === "video" ? (
-                      <video
-                        controls
-                        playsInline
-                        autoPlay
-                        className="max-h-[78vh] w-full bg-black object-contain"
-                      >
-                        <source src={item.asset.url} type={item.asset.mimeType} />
-                      </video>
+                      <VideoPlayer
+                        src={item.asset.url}
+                        poster={item.coverAsset?.url || ""}
+                        className="max-h-[78vh] w-full"
+                        allowFullscreen
+                      />
                     ) : (
                       <img
                         src={item.asset.url}

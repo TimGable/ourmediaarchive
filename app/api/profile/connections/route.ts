@@ -65,9 +65,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Profile not found." }, { status: 404 });
     }
 
-    const relationshipColumn =
+    const relationshipColumn: "follower_user_id" | "artist_user_id" =
       type === "followers" ? "follower_user_id" : "artist_user_id";
-    const filterColumn =
+    const filterColumn: "artist_user_id" | "follower_user_id" =
       type === "followers" ? "artist_user_id" : "follower_user_id";
 
     const { data: relationshipRows, error: relationshipRowsError } = await supabase
@@ -79,7 +79,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: relationshipRowsError.message }, { status: 500 });
     }
 
-    const userIds = (relationshipRows ?? [])
+    const typedRelationshipRows =
+      (relationshipRows as { artist_user_id?: string | null; follower_user_id?: string | null }[]) || [];
+
+    const userIds = typedRelationshipRows
       .map((row) => row[relationshipColumn])
       .filter((value): value is string => Boolean(value));
 

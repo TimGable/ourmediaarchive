@@ -87,30 +87,45 @@ export function Waveform({
 
   useEffect(() => {
     let cancelled = false;
+    let frame = 0;
+
+    const applyData = (nextData) => {
+      frame = window.requestAnimationFrame(() => {
+        if (!cancelled) {
+          setResolvedData(nextData);
+        }
+      });
+    };
 
     if (!audioUrl) {
-      setResolvedData(bars);
+      applyData(bars);
       return () => {
         cancelled = true;
+        if (frame) {
+          window.cancelAnimationFrame(frame);
+        }
       };
     }
 
-    setResolvedData(bars);
+    applyData(bars);
 
     loadWaveformPeaks(audioUrl, bars.length > 0 ? bars.length : 96)
       .then((nextData) => {
         if (!cancelled) {
-          setResolvedData(nextData);
+          applyData(nextData);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setResolvedData(bars);
+          applyData(bars);
         }
       });
 
     return () => {
       cancelled = true;
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
     };
   }, [audioUrl, bars]);
 
