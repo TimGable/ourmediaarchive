@@ -71,6 +71,7 @@ function buildReleaseSummary(group) {
     tracks,
     likes: tracks.reduce((total, track) => total + (track.likes || 0), 0),
     comments: tracks.reduce((total, track) => total + (track.comments || 0), 0),
+    isLiked: tracks.some((track) => track.isLiked),
   };
 }
 
@@ -363,7 +364,9 @@ export function ProfileArchiveView({
                           onOpen={onOpenItem}
                           onPlayTrack={onPlayTrack}
                           onAddTrackToQueue={onAddToQueue}
-                          onOpenComments={onOpenItem}
+                          onToggleLike={onToggleLike}
+                          onOpenComments={onOpenComments}
+                          onShare={onShare}
                           onEditRelease={isOwner ? onEditItem : undefined}
                           formatFileSize={formatFileSize}
                           formatUploadDate={formatUploadDate}

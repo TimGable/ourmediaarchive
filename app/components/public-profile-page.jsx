@@ -469,6 +469,57 @@ export function PublicProfilePage({ profile, items, likedTracks }) {
     });
   };
 
+  const handleToggleLike = async (targetItem) => {
+    if (!targetItem?.id) {
+      return;
+    }
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        showNotice("error", "Sign in to like posts.");
+        return;
+      }
+
+      const response = await fetch(`/api/media/${targetItem.id}/social`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: "toggle-like" }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showNotice("error", payload?.error || "Failed to update like.");
+        return;
+      }
+
+      setMediaItems((current) =>
+        current.map((item) =>
+          item.id === targetItem.id
+            ? {
+                ...item,
+                likes: payload?.likeCount ?? item.likes,
+                comments: payload?.commentCount ?? item.comments,
+                isLiked: Boolean(payload?.isLiked),
+              }
+            : item,
+        ),
+      );
+    } catch {
+      showNotice("error", "Failed to update like.");
+    }
+  };
+
+  const handleOpenComments = (item) => {
+    openMediaItem(item);
+  };
+
   return (
     <motion.div
       className="mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-12"
@@ -500,6 +551,7 @@ export function PublicProfilePage({ profile, items, likedTracks }) {
           >
             <MyProfile
               onBack={handleOwnerBack}
+              likedTracks={normalizedLikedTracks}
               currentTrack={currentTrack}
               isPlaying={isPlaying}
               onPlayTrack={handleOwnerPlayTrack}
@@ -633,53 +685,3 @@ export function PublicProfilePage({ profile, items, likedTracks }) {
     </motion.div>
   );
 }
-  const handleToggleLike = async (targetItem) => {
-    if (!targetItem?.id) {
-      return;
-    }
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        showNotice("error", "Sign in to like posts.");
-        return;
-      }
-
-      const response = await fetch(`/api/media/${targetItem.id}/social`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ action: "toggle-like" }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        showNotice("error", payload?.error || "Failed to update like.");
-        return;
-      }
-
-      setMediaItems((current) =>
-        current.map((item) =>
-          item.id === targetItem.id
-            ? {
-                ...item,
-                likes: payload?.likeCount ?? item.likes,
-                comments: payload?.commentCount ?? item.comments,
-                isLiked: Boolean(payload?.isLiked),
-              }
-            : item,
-        ),
-      );
-    } catch {
-      showNotice("error", "Failed to update like.");
-    }
-  };
-
-  const handleOpenComments = (item) => {
-    openMediaItem(item);
-  };

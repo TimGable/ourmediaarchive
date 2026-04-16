@@ -107,14 +107,6 @@ export function EditUploadModal({
       return;
     }
 
-    const confirmed = window.confirm(
-      `Remove "${track.title}" from this release? This immediately deletes the track and cannot be undone.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     setError("");
     setRemovingTrackId(track.id);
     try {

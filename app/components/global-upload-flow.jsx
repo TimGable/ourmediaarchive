@@ -99,6 +99,7 @@ export function GlobalUploadFlow({
     <AnimatePresence>
       {isOpen && !uploadKind ? (
         <UploadCategoryModal
+          key="upload-category"
           categoryTags={categoryTags}
           onClose={closeFlow}
           onSelect={handleSelectCategory}
@@ -107,6 +108,7 @@ export function GlobalUploadFlow({
 
       {isOpen && uploadKind ? (
         <UploadContentModal
+          key={`upload-content-${uploadKind}`}
           mediaKind={uploadKind}
           isSubmitting={isUploading}
           onClose={closeFlow}
@@ -114,7 +116,7 @@ export function GlobalUploadFlow({
         />
       ) : null}
 
-      {isUploading ? <UploadProgressModal progress={uploadProgress} /> : null}
+      {isUploading ? <UploadProgressModal key="upload-progress" progress={uploadProgress} /> : null}
     </AnimatePresence>
   );
 }

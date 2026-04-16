@@ -14,6 +14,7 @@ import { MediaItemPage } from "./media-item-page";
 import { VisualGalleryLightbox } from "./visual-gallery-lightbox";
 import { ProfileArchiveView } from "./profile-archive-view";
 import { ProfileConnectionsModal } from "./profile-connections-modal";
+import { LikedTracksPanel } from "./liked-tracks-panel";
 import { attachPublicMediaSlugs, buildPublicMediaPath } from "@/lib/media-slugs";
 import { CONTENT_SWAP_ANIMATION, PAGE_TRANSITION, PROFILE_PANEL_SWAP_ANIMATION } from "@/lib/motion";
 import { uploadFormDataWithProgress } from "@/lib/upload-request";
@@ -41,6 +42,7 @@ function sortReleaseTracks(a, b) {
 
 export function MyProfile({
   onBack,
+  likedTracks = [],
   forceSetup = false,
   onSetupComplete,
   navigationIntent = "",
@@ -83,6 +85,7 @@ export function MyProfile({
   const [profileNotice, setProfileNotice] = useState({ type: "", message: "" });
   const [contentNotice, setContentNotice] = useState({ type: "", message: "" });
   const [mediaItems, setMediaItems] = useState([]);
+  const normalizedLikedTracks = Array.isArray(likedTracks) ? likedTracks : [];
   const [profileData, setProfileData] = useState({
     username: '',
     email: '',
@@ -1645,6 +1648,16 @@ useEffect(() => {
                           <Edit2 className="h-4 w-4" />
                           <span>account settings</span>
                         </motion.button>
+                      </div>
+                    }
+                    headerBottomRight={
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        <LikedTracksPanel
+                          likedTracks={normalizedLikedTracks}
+                          onOpenTrack={(track) =>
+                            router.push(buildPublicMediaPath(track.artist.username, track.slug))
+                          }
+                        />
                       </div>
                     }
                   />
