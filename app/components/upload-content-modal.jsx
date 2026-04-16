@@ -6,15 +6,21 @@ import { ViewportPortal } from "./viewport-portal";
 import { PAGE_TRANSITION, SOFT_BUTTON_HOVER, SOFT_BUTTON_TAP, SOFT_PANEL_REVEAL } from "@/lib/motion";
 
 const ACCEPT_BY_KIND = {
-  music: "audio/*",
-  visual: "image/*",
-  video: "video/*",
+  music: "audio/*,.mp3,.m4a,.aac,.wav,.aif,.aiff,.flac,.alac,.caf,.ogg,.opus",
+  visual: "image/*,.jpg,.jpeg,.png,.webp,.gif,.avif,.heic,.heif,.tif,.tiff",
+  video: "video/*,.mp4,.mov,.m4v,.webm,.hevc",
 };
 
 const LABEL_BY_KIND = {
   music: "release",
   visual: "art",
   video: "video",
+};
+
+const ACCEPT_LABEL_BY_KIND = {
+  music: "audio files from Music, Voice Memos, or iCloud Drive",
+  visual: "image files from Photos or iCloud Drive",
+  video: "video files from Photos or iCloud Drive",
 };
 
 const MUSIC_RELEASE_TYPE_OPTIONS = [
@@ -262,7 +268,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
                 </div>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={ACCEPT_BY_KIND.visual}
                   className="hidden"
                   disabled={isSubmitting}
                   onChange={(event) => setCoverArtDraft(event.target.files?.[0] ?? null)}
@@ -310,7 +316,7 @@ export function UploadContentModal({ mediaKind, isSubmitting, onClose, onSubmit 
                   choose file
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Accepted type: {ACCEPT_BY_KIND[mediaKind]}
+                  Accepted type: {ACCEPT_LABEL_BY_KIND[mediaKind] || "media files"}
                   {isMultiTrackMusic ? ", select multiple tracks for this release" : ""}
                 </p>
               </div>
