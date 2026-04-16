@@ -4,7 +4,7 @@ import { PublicAudioProvider } from "@/app/components/public-audio-context";
 
 export const metadata: Metadata = {
   title: "splotch",
-  description: "Splotch | Our media archive",
+  description: "splotch | our media archive",
 };
 
 export default function RootLayout({
