@@ -30,6 +30,7 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
   const [showRequestInvite, setShowRequestInvite] = useState(false);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [showAbout, setShowAbout] = useState(false);
+  const [supportsHoverMotion, setSupportsHoverMotion] = useState(false);
   const viewHistoryRef = useRef([]);
 
   const getCurrentLandingView = () => {
@@ -111,6 +112,22 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
 
     viewHistoryRef.current = getRootViewHistorySeed(initialView);
     navigateLanding(initialView, { recordHistory: false });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const updateHoverSupport = () => setSupportsHoverMotion(mediaQuery.matches);
+
+    updateHoverSupport();
+    mediaQuery.addEventListener("change", updateHoverSupport);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateHoverSupport);
+    };
   }, []);
 
   const openPublicProfile = (artist, returnView) => {
@@ -243,10 +260,14 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
                     {/* Browse Artists - Big Button */}
                     <motion.button
                       onClick={() => navigateLanding("categories")}
-                      className="group relative block w-full max-w-[22rem] overflow-hidden border-2 border-white bg-transparent px-8 py-6 transition-all duration-300 active:scale-95 touch-manipulation md:max-w-[34rem] md:px-12 md:py-8"
-                      onHoverStart={() => setHoveredButton('browse')}
-                      onHoverEnd={() => setHoveredButton(null)}
-                      whileHover={SOFT_BUTTON_HOVER}
+                      className="group relative flex h-[5.75rem] w-full max-w-[22rem] items-center justify-center overflow-hidden border-2 border-white bg-transparent px-8 transition-all duration-300 active:scale-95 touch-manipulation md:h-[7rem] md:max-w-[34rem] md:px-12"
+                      onHoverStart={() => {
+                        if (supportsHoverMotion) setHoveredButton('browse');
+                      }}
+                      onHoverEnd={() => {
+                        if (supportsHoverMotion) setHoveredButton(null);
+                      }}
+                      whileHover={supportsHoverMotion ? SOFT_BUTTON_HOVER : undefined}
                       whileTap={SOFT_BUTTON_TAP}
                     >
                       <motion.div 
@@ -276,9 +297,9 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
                       transition={{ ...PAGE_TRANSITION, delay: 0.28 }}
                     >
                       <motion.button 
-                        className="group relative block min-h-[5.25rem] w-full max-w-[22rem] overflow-hidden border border-white/40 bg-white/5 px-5 py-4 transition-all duration-200 hover:border-white/60 hover:bg-white/15 active:scale-95 touch-manipulation md:w-[16rem] md:max-w-none md:px-7"
+                        className="group relative flex h-[5.25rem] w-full max-w-[22rem] items-center justify-center overflow-hidden border border-white/40 bg-white/5 px-5 transition-all duration-200 hover:border-white/60 hover:bg-white/15 active:scale-95 touch-manipulation md:w-[16rem] md:max-w-none md:px-7"
                         onClick={() => navigateLanding("sign-in")}
-                        whileHover={SOFT_BUTTON_HOVER}
+                        whileHover={supportsHoverMotion ? SOFT_BUTTON_HOVER : undefined}
                         whileTap={SOFT_BUTTON_TAP}
                       >
                         <span className="relative z-10 whitespace-nowrap text-base tracking-wide text-white md:text-lg">
@@ -293,9 +314,9 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
                       </motion.button>
                     
                       <motion.button 
-                        className="group relative block min-h-[5.25rem] w-full max-w-[22rem] overflow-hidden border border-white/40 bg-white/5 px-5 py-4 transition-all duration-200 hover:border-white/60 hover:bg-white/15 active:scale-95 touch-manipulation md:w-[16rem] md:max-w-none md:px-7"
+                        className="group relative flex h-[5.25rem] w-full max-w-[22rem] items-center justify-center overflow-hidden border border-white/40 bg-white/5 px-5 transition-all duration-200 hover:border-white/60 hover:bg-white/15 active:scale-95 touch-manipulation md:w-[16rem] md:max-w-none md:px-7"
                         onClick={() => navigateLanding("request-invite")}
-                        whileHover={SOFT_BUTTON_HOVER}
+                        whileHover={supportsHoverMotion ? SOFT_BUTTON_HOVER : undefined}
                         whileTap={SOFT_BUTTON_TAP}
                       >
                         <span className="relative z-10 whitespace-nowrap text-base tracking-wide text-white md:text-lg">
@@ -313,11 +334,11 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
                     {/* About Button */}
                     <motion.button
                       onClick={() => setShowAbout(!showAbout)}
-                      className="relative group mx-auto mt-5 block overflow-hidden border border-white/20 px-6 py-2 transition-all duration-300 hover:border-white/40 touch-manipulation"
+                      className="relative group mx-auto mt-5 flex h-10 w-28 items-center justify-center overflow-hidden border border-white/20 px-6 transition-all duration-300 hover:border-white/40 touch-manipulation"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ ...PAGE_TRANSITION, delay: 0.32 }}
-                      whileHover={SOFT_BUTTON_HOVER}
+                      whileHover={supportsHoverMotion ? SOFT_BUTTON_HOVER : undefined}
                       whileTap={SOFT_BUTTON_TAP}
                     >
                       <span className="relative z-10 text-xs md:text-sm tracking-widest text-gray-400 group-hover:text-white transition-colors">
