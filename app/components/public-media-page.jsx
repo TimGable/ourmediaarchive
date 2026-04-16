@@ -13,6 +13,7 @@ import { EditUploadModal } from "./edit-upload-modal";
 import { MentionText } from "./mention-text";
 import { VideoPlayer } from "./video-player";
 import { VisualImageFrame } from "./visual-image-frame";
+import { ShareLinkButton } from "./share-link-button";
 import { buildPublicMediaPath, buildPublicProfilePath } from "@/lib/media-slugs";
 import { createSupabaseBrowserClient, getStoredSupabaseUserId } from "@/lib/supabase/client";
 
@@ -122,6 +123,9 @@ export function PublicMediaPage({ profile, item, publicItems }) {
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const isMusic = displayedItem.mediaKind === "music";
   const displayTitle = getMediaDisplayTitle(displayedItem);
+  const sharePath = buildPublicMediaPath(profile.username, displayedItem.slug);
+  const shareUrl =
+    typeof window === "undefined" ? sharePath : `${window.location.origin}${sharePath}`;
   const collectionTracks = useMemo(() => {
     if (
       displayedItem.mediaKind !== "music" ||
@@ -455,6 +459,11 @@ export function PublicMediaPage({ profile, item, publicItems }) {
               <p>{displayedItem.visibility.replace("_", " ")}</p>
               <p className="mt-2">{formatUploadDate(displayedItem.publishedAt || displayedItem.createdAt)}</p>
             </div>
+            <ShareLinkButton
+              url={shareUrl}
+              label="share post"
+              className="mt-4 inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-gray-400 transition-colors hover:border-white/40 hover:text-white"
+            />
             {isOwnerView ? (
               <button
                 type="button"

@@ -7,6 +7,8 @@ import { VisualGalleryLightbox } from "./visual-gallery-lightbox";
 import { VideoPlayer } from "./video-player";
 import { MentionText } from "./mention-text";
 import { VisualImageFrame } from "./visual-image-frame";
+import { ShareLinkButton } from "./share-link-button";
+import { buildPublicMediaPath } from "@/lib/media-slugs";
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -84,6 +86,10 @@ export function MediaItemPage({
   const waveformData = buildWaveformData(`${item.id}:${item.asset?.fileName || item.title}`);
   const progress = duration > 0 ? currentTime / duration : 0;
   const displayTitle = getMediaDisplayTitle(item);
+  const sharePath =
+    profile?.username && item?.slug ? buildPublicMediaPath(profile.username, item.slug) : "";
+  const shareUrl =
+    sharePath && typeof window !== "undefined" ? `${window.location.origin}${sharePath}` : sharePath;
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const resolvedGalleryItems = useMemo(
     () =>
@@ -134,14 +140,23 @@ export function MediaItemPage({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onEdit(item)}
-            className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-gray-400 transition-colors hover:border-white/40 hover:text-white"
-          >
-            <Edit2 className="h-4 w-4" />
-            <span>edit upload</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            {shareUrl ? (
+              <ShareLinkButton
+                url={shareUrl}
+                label="share post"
+                className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-gray-400 transition-colors hover:border-white/40 hover:text-white"
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-gray-400 transition-colors hover:border-white/40 hover:text-white"
+            >
+              <Edit2 className="h-4 w-4" />
+              <span>edit upload</span>
+            </button>
+          </div>
         </div>
 
         <div className={item.mediaKind === "music" ? "mx-auto max-w-5xl" : ""}>
