@@ -200,7 +200,7 @@ export function NotificationsPopover({ compact = false, onNavigate }) {
           <motion.div
             className={`pointer-events-auto absolute z-[9999] overflow-hidden rounded-[1.65rem] border border-white/10 bg-black p-3 shadow-[0_24px_80px_rgba(0,0,0,0.65)] ${
               compact
-                ? "left-0 top-[calc(100%+0.75rem)] w-[min(22rem,calc(100vw-3rem))]"
+                ? "fixed left-3 right-3 top-[5rem] max-h-[calc(100dvh-6rem)] w-auto"
                 : "right-0 top-[calc(100%+0.75rem)] w-[min(24rem,calc(100vw-2rem))]"
             }`}
             {...SOFT_PANEL_REVEAL}
@@ -219,7 +219,11 @@ export function NotificationsPopover({ compact = false, onNavigate }) {
             {isLoading ? (
               <div className="px-3 py-6 text-sm text-gray-400">loading notifications...</div>
             ) : notifications.length > 0 ? (
-              <div className="scrollbar-hidden max-h-[24rem] overflow-y-auto">
+              <div
+                className={`scrollbar-hidden overflow-y-auto ${
+                  compact ? "max-h-[calc(100dvh-11rem)]" : "max-h-[24rem]"
+                }`}
+              >
                 {notifications.map((notification) => (
                   <motion.button
                     key={notification.id}

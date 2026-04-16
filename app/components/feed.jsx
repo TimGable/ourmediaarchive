@@ -582,6 +582,7 @@ export function Feed({
                           poster={item.coverAsset?.url || ""}
                           className="w-full border border-white/10"
                           ratioClass="aspect-[4/5] sm:aspect-video"
+                          useIntrinsicAspect={false}
                           muted
                           allowFullscreen
                         />

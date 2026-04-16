@@ -257,6 +257,7 @@ export function MediaItemPage({
                     poster={item.coverAsset?.url || ""}
                     className="w-full max-w-[22rem] sm:max-w-[34rem] md:max-w-[42rem]"
                     ratioClass="aspect-[4/5] sm:aspect-video"
+                    useIntrinsicAspect={false}
                     allowFullscreen
                   />
                 ) : (

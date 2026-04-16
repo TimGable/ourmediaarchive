@@ -23,6 +23,7 @@ export function VideoPlayer({
   muted = true,
   loop = false,
   allowFullscreen = true,
+  useIntrinsicAspect = true,
 }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
@@ -213,7 +214,7 @@ export function VideoPlayer({
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   const effectiveAspectStyle = isFullscreen
     ? { width: "100%", height: "100%" }
-    : videoAspectRatio
+    : useIntrinsicAspect && videoAspectRatio
       ? { aspectRatio: videoAspectRatio }
       : undefined;
 
