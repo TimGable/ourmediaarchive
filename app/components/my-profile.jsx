@@ -1160,7 +1160,7 @@ useEffect(() => {
             >
               <div className="flex flex-col md:flex-row items-start gap-6 md:gap-8 mb-8">
                 {/* Avatar Upload */}
-                <div className="flex-shrink-0 mx-auto md:mx-0">
+                <div className="mx-auto flex w-full max-w-[18rem] flex-col items-center md:mx-0 md:w-48 md:flex-shrink-0">
                   <input
                     ref={avatarInputRef}
                     type="file"
@@ -1199,12 +1199,18 @@ useEffect(() => {
                       </div>
                     )}
                   </button>
-                  <div className="mt-3 text-center md:text-left">
+                  <div
+                    className={`mt-3 grid w-full items-center gap-4 ${
+                      profileData.avatar ? "grid-cols-2" : "grid-cols-1"
+                    }`}
+                  >
                     <button
                       type="button"
                       onClick={openAvatarPicker}
                       disabled={isUploadingAvatar}
-                      className="text-xs uppercase tracking-[0.18em] text-gray-400 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      className={`whitespace-nowrap text-xs uppercase tracking-[0.18em] text-gray-400 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-70 ${
+                        profileData.avatar ? "justify-self-end" : "justify-self-center"
+                      }`}
                     >
                       {profileData.avatar ? "replace image" : "choose image"}
                     </button>
@@ -1213,7 +1219,7 @@ useEffect(() => {
                         type="button"
                         onClick={handleRemoveAvatar}
                         disabled={isUploadingAvatar}
-                        className="ml-4 text-xs uppercase tracking-[0.18em] text-gray-500 transition-colors hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-70"
+                        className="justify-self-start whitespace-nowrap text-xs uppercase tracking-[0.18em] text-gray-500 transition-colors hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-70"
                       >
                         remove
                       </button>
@@ -1661,6 +1667,7 @@ useEffect(() => {
             setShowChangePassword(false);
             setProfileNotice({ type: "success", message: "Password updated successfully." });
           }}
+          accountEmail={profileData.email}
         />
       )}
 

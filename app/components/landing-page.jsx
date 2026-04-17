@@ -18,6 +18,7 @@ import {
 import {
   FADE_UP_ANIMATION,
   PAGE_TRANSITION,
+  SOFT_EASE,
   SOFT_BUTTON_HOVER,
   SOFT_BUTTON_TAP,
 } from "@/lib/motion";
@@ -252,9 +253,7 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
 
                   {/* CTA Buttons */}
                   <motion.div 
-                    className={`relative mx-auto mb-10 flex w-full flex-col items-center px-2 transition-[padding] duration-300 md:mb-16 md:px-4 ${
-                      showAbout ? 'pb-[17rem] md:pb-[14rem]' : 'pb-0'
-                    }`}
+                    className="relative mx-auto mb-10 flex w-full flex-col items-center px-2 md:mb-16 md:px-4"
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ ...PAGE_TRANSITION, delay: 0.2 }}
@@ -337,7 +336,7 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
                     <div className="relative mx-auto mt-3 w-full max-w-[22rem] md:mt-5 md:w-28 md:max-w-none">
                       <motion.button
                         onClick={() => setShowAbout(!showAbout)}
-                        className="relative group flex h-11 w-full items-center justify-center overflow-hidden border border-white/20 px-5 transition-all duration-300 hover:border-white/40 touch-manipulation md:h-10"
+                        className="relative group flex h-11 w-full items-center justify-center overflow-hidden border border-white/20 bg-white/0 px-5 transition-colors duration-300 hover:border-white/45 hover:bg-white/[0.06] touch-manipulation md:h-10"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ ...PAGE_TRANSITION, delay: 0.32 }}
@@ -347,21 +346,15 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
                         <span className="relative z-10 text-xs tracking-wide text-gray-400 transition-colors group-hover:text-white md:text-sm md:tracking-widest">
                           {showAbout ? 'close' : 'about'}
                         </span>
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-white/5 via-white/10 to-white/5"
-                          initial={{ x: '-100%' }}
-                          whileHover={{ x: '100%' }}
-                          transition={PAGE_TRANSITION}
-                        />
                       </motion.button>
-                      <AnimatePresence>
+                      <AnimatePresence initial={false}>
                         {showAbout && (
                           <motion.div
-                            className="absolute left-1/2 top-[calc(100%+1rem)] z-20 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden border border-white/15 bg-black/90 px-4 py-4 text-sm shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl md:text-base"
-                            initial={{ opacity: 0, y: -8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -8 }}
-                            transition={PAGE_TRANSITION}
+                            className="absolute left-1/2 top-[calc(100%+1rem)] z-20 w-[min(32rem,calc(100vw-2rem))] origin-top -translate-x-1/2 overflow-hidden border border-white/15 bg-black/90 px-4 py-4 text-sm shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl md:text-base"
+                            initial={{ opacity: 0, y: -6, scale: 0.985, filter: 'blur(8px)' }}
+                            animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+                            exit={{ opacity: 0, y: -4, scale: 0.99, filter: 'blur(6px)' }}
+                            transition={{ duration: 0.38, ease: SOFT_EASE }}
                           >
                             <div className="space-y-4 text-gray-300 leading-relaxed">
                               <p className="text-center md:text-left">
@@ -390,6 +383,18 @@ export function LandingPage({ onSignIn, onForgotPassword }) {
                         )}
                       </AnimatePresence>
                     </div>
+                    <AnimatePresence initial={false}>
+                      {showAbout && (
+                        <motion.div
+                          aria-hidden="true"
+                          className="w-full"
+                          initial={{ height: 0 }}
+                          animate={{ height: '17rem' }}
+                          exit={{ height: 0 }}
+                          transition={{ duration: 0.42, ease: SOFT_EASE }}
+                        />
+                      )}
+                    </AnimatePresence>
                   </motion.div>
                 </motion.div>
               </div>

@@ -1,19 +1,29 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { ViewportPortal } from "./viewport-portal";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export function ChangePasswordModal({ onClose, onSuccess, isFirstTimeLogin = false }) {
+export function ChangePasswordModal({
+  onClose,
+  onSuccess,
+  isFirstTimeLogin = false,
+  accountEmail = "",
+}) {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState(accountEmail);
+  const [resetNotice, setResetNotice] = useState({ type: "", message: "" });
+  const [isSendingReset, setIsSendingReset] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
-    // Validation
     if (!isFirstTimeLogin && !currentPassword) {
       setError("current password is required");
       return;
@@ -31,11 +41,98 @@ export function ChangePasswordModal({ onClose, onSuccess, isFirstTimeLogin = fal
 
     setIsSubmitting(true);
 
-    // Simulate API call - will be replaced with Supabase
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      if (!isFirstTimeLogin) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
 
-    setIsSubmitting(false);
-    onSuccess();
+        if (sessionError || !accessToken) {
+          setError("your session expired. sign in again, then try changing your password.");
+          return;
+        }
+
+        const response = await fetch("/api/auth/change-password", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword,
+          }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          setError(payload?.error || "failed to update password");
+          return;
+        }
+      } else {
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+        if (updateError) {
+          setError(updateError.message || "failed to update password");
+          return;
+        }
+      }
+
+      onSuccess();
+    } catch (submitError) {
+      console.error("Failed to change password:", submitError);
+      setError("failed to update password. please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSendResetLink = async (event) => {
+    event?.preventDefault();
+    setResetNotice({ type: "", message: "" });
+
+    const normalizedEmail = String(resetEmail || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      setResetNotice({ type: "error", message: "enter your account email first" });
+      return;
+    }
+
+    setIsSendingReset(true);
+
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setResetNotice({
+          type: "error",
+          message: payload?.error || "failed to send reset link",
+        });
+        return;
+      }
+
+      setResetNotice({
+        type: "success",
+        message: payload?.message || "password reset email sent. check your inbox and spam folder.",
+      });
+    } catch (resetError) {
+      console.error("Failed to send reset password email:", resetError);
+      setResetNotice({
+        type: "error",
+        message: "failed to send reset link. please try again.",
+      });
+    } finally {
+      setIsSendingReset(false);
+    }
   };
 
   return (
@@ -166,6 +263,63 @@ export function ChangePasswordModal({ onClose, onSuccess, isFirstTimeLogin = fal
               </motion.span>
             </motion.button>
           </div>
+
+          {!isFirstTimeLogin && (
+            <div className="border-t border-white/10 pt-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotPassword((value) => !value);
+                  setResetNotice({ type: "", message: "" });
+                  setResetEmail((value) => value || accountEmail);
+                }}
+                className="text-sm text-gray-400 underline-offset-4 transition-colors hover:text-white hover:underline"
+                disabled={isSubmitting || isSendingReset}
+              >
+                forgot password?
+              </button>
+
+              {showForgotPassword && (
+                <motion.div
+                  className="mt-4 space-y-4"
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <p className="text-sm leading-relaxed text-gray-400">
+                    enter your account email and we&apos;ll send you a reset password link.
+                  </p>
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(event) => setResetEmail(event.target.value)}
+                    className="w-full bg-transparent border-b-2 border-white/20 focus:border-white/60 outline-none py-2 text-base transition-colors tracking-wide"
+                    placeholder="email address"
+                    disabled={isSendingReset}
+                    required
+                  />
+                  {resetNotice.message && (
+                    <p
+                      className={`text-sm tracking-wide ${
+                        resetNotice.type === "success" ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      {resetNotice.message}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSendResetLink}
+                    disabled={isSendingReset}
+                    className="border border-white/30 px-4 py-2 text-sm transition-colors hover:border-white/60 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSendingReset ? "sending..." : "send reset link"}
+                  </button>
+                </motion.div>
+              )}
+            </div>
+          )}
         </form>
       </motion.div>
     </motion.div>
